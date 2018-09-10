@@ -12,15 +12,15 @@
  *    You should have received a copy of the GNU General Public License
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- */
+ *//*
+
 package mulan.classifier.transformation;
 
 import mulan.classifier.InvalidDataException;
 import mulan.classifier.MultiLabelOutput;
 import mulan.classifier.neural.BPMLL;
 import mulan.classifier.neural.DataPair;
-import mulan.data.DataUtils;
-import mulan.data.MultiLabelInstances;
+import mulan.data.*;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.meta.FilteredClassifier;
@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
+*/
 /**
  * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
  * <p>For more information, see <em>Read, J.; Pfahringer, B.; Holmes, G., Frank,
@@ -45,80 +46,103 @@ import java.util.Random;
  * @author Konstantinos Sechidis
  * @author Grigorios Tsoumakas
  * @version 2012.02.27
- */
-public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner {
+ *//*
 
-    /**
+public class AttentionOnFeaturesCC extends TransformationBasedMultiLabelLearner {
+
+    */
+/**
      * The number of classifier chain models
-     */
+     *//*
+
     protected int numOfModels;
-    /**
+    */
+/**
      * An array of ClassifierChain models
-     */
+     *//*
+
     protected FilteredClassifier[] layer_1;
     //第二层的链序
     protected FilteredClassifier[] layer_2;
 
-    /**
+    */
+/**
      * Random number generator
-     */
+     *//*
+
     protected Random rand;
-    /**
+    */
+/**
      * Whether the output is computed based on the average votes or on the
      * average confidences
-     */
+     *//*
+
     protected boolean useConfidences;
-    /**
+    */
+/**
      * Whether to use sampling with replacement to create the data of the models
      * of the ensemble
-     */
+     *//*
+
     protected boolean useSamplingWithReplacement = true;
-    /**
+    */
+/**
      * The size of each bag sample, as a percentage of the training size. Used
      * when useSamplingWithReplacement is true
-     */
+     *//*
+
     protected int BagSizePercent = 100;
 
-    /**
+    */
+/**
      * Returns the size of each bag sample, as a percentage of the training size
      *
      * @return the size of each bag sample, as a percentage of the training size
-     */
+     *//*
+
     public int getBagSizePercent() {
         return BagSizePercent;
     }
 
-    /**
+    */
+/**
      * Sets the size of each bag sample, as a percentage of the training size
      *
      * @param bagSizePercent the size of each bag sample, as a percentage of the
      * training size
-     */
+     *//*
+
     public void setBagSizePercent(int bagSizePercent) {
         BagSizePercent = bagSizePercent;
     }
 
-    /**
+    */
+/**
      * Returns the sampling percentage
      *
      * @return the sampling percentage
-     */
+     *//*
+
     public double getSamplingPercentage() {
         return samplingPercentage;
     }
 
-    /**
+    */
+/**
      * Sets the sampling percentage
      *
      * @param samplingPercentage the sampling percentage
-     */
+     *//*
+
     public void setSamplingPercentage(double samplingPercentage) {
         this.samplingPercentage = samplingPercentage;
     }
-    /**
+    */
+/**
      * The size of each sample, as a percentage of the training size Used when
      * useSamplingWithReplacement is false
-     */
+     *//*
+
     protected double samplingPercentage = 67;
 
     private MultiLabelInstances train;
@@ -126,23 +150,27 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
     private double[][][] layer_1Predict;
 
     private double[][] wights;
-    private BPMLL bp;
+    private BPMLL[] bp;
     private Classifier layer2Clssifier;
     private ArrayList<Attribute> layer_2_Attr;
 
-    /**
+    */
+/**
      * Default constructor
-     */
-    public AttentionDoubleLayerCC() {
+     *//*
+
+    public AttentionOnFeaturesCC() {
         this(new J48(), new J48());
     }
 
-    /**
+    */
+/**
      * Creates a new object
      *
      * @param classifier the base classifier for each ClassifierChain model
-     */
-    public AttentionDoubleLayerCC(Classifier classifier, Classifier layer2) {
+     *//*
+
+    public AttentionOnFeaturesCC(Classifier classifier, Classifier layer2) {
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
@@ -155,10 +183,12 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         numOfModels = train.getNumLabels();
         layer_1 = new FilteredClassifier[numOfModels];
         layer_2 = new FilteredClassifier[numOfModels];
+        bp = new BPMLL[numOfModels];
 
         Instances trainDataset;
         numLabels = train.getNumLabels();
         trainDataset = train.getDataSet();
+
 
         //STEP1: 单独训练多个单分类器。
         //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
@@ -185,6 +215,17 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
             trainDataset.setClassIndex(labelIndices[i]);
             debug("Bulding layer_1 model " + (i + 1) + "/" + numLabels);
             layer_1[i].buildClassifier(trainDataset);
+
+            //attention
+            bp[i] = new BPMLL(42);
+            bp[i].setDebug(true);
+            bp[i].setTrainingEpochs(200);
+            bp[i].setHiddenLayers(new int[]{32, 16}); //test it
+
+            LabelsMetaDataImpl meta = new LabelsMetaDataImpl();
+            meta.addRootNode(new LabelNodeImpl(trainDataset.attribute(labelIndices[i]).name()));
+            MultiLabelInstances labelInstances = new MultiLabelInstances(trainDataset, meta);
+            bp[i].build(labelInstances);
 
         }
         //layer_1 done
@@ -404,4 +445,4 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
     }
 
 
-}
+}*/

@@ -1,54 +1,48 @@
-import mulan.classifier.neural.BPMLL;
-import mulan.classifier.neural.DataPair;
-import mulan.classifier.neural.model.Neuron;
-import mulan.data.InvalidDataFormatException;
-import mulan.data.LabelNodeImpl;
-import mulan.data.LabelsMetaDataImpl;
-import mulan.data.MultiLabelInstances;
-import mulan.data.generation.NumericAttribute;
-import weka.core.Attribute;
-import weka.core.DenseInstance;
-import weka.core.Instance;
-import weka.core.Instances;
 import weka.core.matrix.Matrix;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 public class test {
     public static void main(String[] args) throws Exception {
         double[][] data = new double[5][4];
+        /**
+         * {0, 1, 2, 2}
+         * {1, 0, 0, 1}
+         * {2, 0, 0, 1}
+         * {2, 1, 1, 0}
+         */
         data[0] = new double[]{1., 0., 0., 1.};
         data[1] = new double[]{1., 1., 0., 1.};
         data[2] = new double[]{0., 0., 1., 1.};
         data[3] = new double[]{1., 0., 1., 0.};
         data[4] = new double[]{1., 0., 1., 0.};
-        double[] PR = new double[4];
-        for (int i = 0; i < data.length; i++) {
-            for (int j = 0; j < data[i].length; j++) {
-                if(data[i][j] == 1.){
-                    PR[j] = PR[j] + sum(data[i]) - 1;
+        PageRank pageRank = new PageRank(data).build();
+        Matrix pr = pageRank.getPr();
+        int iterator = pageRank.getIterator();
+
+        System.out.print("倒数第一次迭代结果：");
+
+        System.out.print("最后结果：");
+
+        pr.print(2, 2);
+
+        System.out.print("迭代次数：" + iterator);
+
+    }
+
+    public static boolean compareAbs(Matrix a, Matrix b){
+
+        boolean flag = true;
+        for(int i = 0;i < a.getRowDimension();i++){
+            for(int j = 0;j < a.getColumnDimension();j++){
+                if(Math.abs(a.get(i, j)) <= Math.abs(b.get(i, j))){
+                    flag = false;break;
                 }
             }
         }
-        System.out.println(Arrays.toString(PR));
-//        double[][] wights = bp.getWights();
-//        Matrix w = new Matrix(wights);
-//        System.out.println(w); // 4*7
-//
-//        double[][] da = new double[3][];
-//        da[0] = new double[]{0.6, 0, 0.65};
-//        da[1] = new double[]{0.8, 0.7, 0.4};
-//        da[2] = new double[]{0.9, 0.3, 0.8};
-//        Matrix m = new Matrix(da); //3*3
-//        System.out.println(new Matrix(tanh(m.times(w).getArray()))); //3 * 7
-//        Matrix tanh = new Matrix(tanh(m.times(w).getArray()));
-
-
-
-
+        return flag;
     }
+
 
     public static double sum(double[] d){
         double sum = 0;
@@ -77,6 +71,89 @@ public class test {
             tmp[i] = StrictMath.pow(StrictMath.E, d[i]) / sum;
         }
         return tmp;
+    }
+
+    private static class PageRank {
+        private double[][] data;
+        private Matrix pr;
+        private Matrix pageRankPre;
+        private int iterator;
+
+        public PageRank(double[][] data) {
+            this.data = data;
+        }
+
+        public Matrix getPr() {
+            return pr;
+        }
+
+
+        public int getIterator() {
+            return iterator;
+        }
+
+        public PageRank build() {
+            double[][] PR1 = new double[data[0].length][data[0].length]; //出度
+            for (int i = 0; i < data.length; i++) {
+                for (int j = 0; j < data[i].length; j++) {
+                    if(data[i][j] == 1){
+                        for (int l = 0; l < data[i].length; l++) {
+                            if(data[i][l] == 1){
+                                PR1[l][j] += 1;
+                            }
+                            if(j == l){
+                                PR1[j][l] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < PR1.length; i++) {
+                System.out.println(Arrays.toString(PR1[i]));
+            }
+
+            System.out.println();
+
+            for (int i = 0; i < PR1.length; i++) {
+                double sum = 0d;
+                for (int j = 0; j < PR1.length; j++) {
+                    sum += PR1[j][i];
+                }
+                for (int j = 0; j < PR1.length; j++) {
+                    PR1[j][i] = PR1[j][i] / sum;
+                }
+            }
+
+            for (int i = 0; i < PR1.length; i++) {
+                System.out.println(Arrays.toString(PR1[i]));
+            }
+
+            int n = PR1.length;
+            double alpha = 0.85;
+            Matrix ma = new Matrix(PR1);//源矩阵
+            pr = new Matrix(n, 1, 1.0d);
+            Matrix minimum = new Matrix(n ,1, 0.000001d);//极小值
+            Matrix u = new Matrix(n, n,1.0d);//单元矩阵
+
+
+            pageRankPre = pr;
+            Matrix g = ma.times(alpha).plus(u.times((1-alpha)/n));
+            pr = g.times(pr);
+            iterator = 1;
+            while(true){
+                if(compareAbs(minimum, pageRankPre.minus(pr))){
+                    break;
+                }else{
+                    pageRankPre = pr;
+                    g = ma.times(alpha).plus(u.times((1-alpha)/n));
+                    pr = g.times(pr);
+                    iterator ++;
+                }
+            }
+            pageRankPre = null;
+            return this;
+        }
     }
 
 
