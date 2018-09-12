@@ -24,6 +24,7 @@ import mulan.classifier.neural.BPMLL;
 import mulan.classifier.neural.DataPair;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
+import mulan.rbms.M;
 import mulan.util.A;
 import mulan.util.PageRank;
 import mulan.util.StatUtils;
@@ -36,8 +37,13 @@ import weka.core.Instance;
 import weka.core.Instances;
 import weka.filters.unsupervised.attribute.Remove;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
@@ -50,7 +56,7 @@ import java.util.stream.Collectors;
  * @author Grigorios Tsoumakas
  * @version 2012.02.27
  */
-public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner {
+public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner {
 
     /**
      * The number of classifier chain models
@@ -137,7 +143,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
     /**
      * Default constructor
      */
-    public AttentionDoubleLayerCC() {
+    public PageRankDoubleLayerCC() {
         this(new J48(), new J48());
     }
 
@@ -146,7 +152,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
      *
      * @param classifier the base classifier for each ClassifierChain model
      */
-    public AttentionDoubleLayerCC(Classifier classifier, Classifier layer2) {
+    public PageRankDoubleLayerCC(Classifier classifier, Classifier layer2) {
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
@@ -154,7 +160,10 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
 
     @Override
     protected void buildInternal(MultiLabelInstances train) throws Exception {
+//        IntStream stream = Arrays.stream(train.getLabelIndices());
 
+        int[] chain = getCCChain(train);
+        System.out.println(Arrays.toString(chain));
 
         this.train = train;
         layer_2_Attr = layer_2_Attr();
@@ -165,6 +174,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         Instances trainDataset;
         numLabels = train.getNumLabels();
         trainDataset = train.getDataSet();
+
 
         //STEP1: 单独训练多个单分类器。
         //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
@@ -207,7 +217,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         }
 
 
-        /*//STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
+        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
         List<DataPair> dp = new ArrayList<>();
         for (int i = 0; i < layer_1Predict.length; i++) {
             DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
@@ -224,45 +234,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         for (int i = 0; i < layer_1Predict.length; i++) {
             //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
             layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-        }*/
-
-        double[][] ud = StatUtils.margDepMatrix(trainDataset);
-
-        EdgeWeightedGraph G = new EdgeWeightedGraph(trainDataset.numClasses());
-
-        for(int i = 0; i < trainDataset.numClasses(); i++) {
-            for(int j = i+1; j < trainDataset.numClasses(); j++) {
-                Edge e = new Edge(i, j, ud[i][j]);
-                G.addEdge(e);
-            }
         }
-
-        KruskalMST mst = new KruskalMST(G);
-        int paM[][] = new int[trainDataset.numClasses()][trainDataset.numClasses()];
-        for (Edge e : mst.edges()) {
-            int j = e.either();
-            int k = e.other(j);
-            paM[j][k] = 1;
-            paM[k][j] = 1;
-            //StdOut.println(e);
-        }
-
-//        List<String> list = train.getLabelAttributes().stream().map(f -> f.value(0)).collect(Collectors.toList());
-//        list.stream().limit(100).forEach(System.out::println);
-//        new PageRank(trainDataset)
-
-        int root = 0;
-        if (getDebug())
-            System.out.println("Make a Tree from Root "+root);
-        //这里paL[][]被初始化了，那么里面的元素就是全部0；
-        int paL[][] = new int[trainDataset.numClasses()][0];
-        int visted[] = new int[trainDataset.numClasses()];
-        Arrays.fill(visted,-1);
-        visted[root] = 0;
-        //treeify(int:root=0树的根节点,int[标签数目][标签数目]：paM存储的是标签之间是否有边，有边则标签号交汇处值为1，int[标签数][0]：0，int[标签数]：visited记录标签是否被访问，[0，-1，-1，-1，-1，-1] )
-        treeify(root,paM,paL, visted);
-        Arrays.sort(visted);
-        //visted is cc link
 
         //layer_2 data
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
@@ -274,7 +246,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
             for (int j = 0; j < numLabels; j++) {
                 values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
             }
-            System.arraycopy(layer_1Predict[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+            System.arraycopy(layer_2_addData[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
             Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
             metaInstance.setDataset(layer_2_data);
 
@@ -307,6 +279,58 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
 //            tempInstance.setValue(labelIndices[i], maxIndex);
         }
 
+    }
+
+    private int[] getCCChain(MultiLabelInstances train) {
+        Stream<double[]> list = train.getDataSet().stream()
+                .map(instance -> Arrays.stream(train.getLabelIndices()).mapToDouble(i -> instance.value(i)).toArray());
+        double[][] labels = list.toArray(double[][]::new);
+        for (int i = 0; i < 10; i++) {
+            System.out.println(Arrays.toString(labels[i]));
+        }
+
+        PageRank pageRank = new PageRank(labels).build();
+        double[] pr = pageRank.getPr().getColumnPackedCopy();
+
+        int root = maxIndex(pr);
+        //catch StatUtils.getYFromD
+        System.out.println(train.getDataSet().classIndex());
+        double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
+        System.out.println(M.toString(ud));
+        EdgeWeightedGraph G = new EdgeWeightedGraph(train.getNumLabels());
+
+        for(int i = 0; i < train.getNumLabels(); i++) {
+            for(int j = i+1; j < train.getNumLabels(); j++) {
+                Edge e = new Edge(i, j, ud[i][j]);
+                G.addEdge(e);
+            }
+        }
+
+        KruskalMST mst = new KruskalMST(G);
+        int paM[][] = new int[train.getNumLabels()][train.getNumLabels()];
+        for (Edge e : mst.edges()) {
+            int j = e.either();
+            int k = e.other(j);
+            paM[j][k] = 1;
+            paM[k][j] = 1;
+            //StdOut.println(e);
+        }
+
+//        List<String> list = train.getLabelAttributes().stream().map(f -> f.value(0)).collect(Collectors.toList());
+//        list.stream().limit(100).forEach(System.out::println);
+//        new PageRank(trainDataset)
+
+        if (getDebug())
+            System.out.println("Make a Tree from Root "+root);
+        //这里paL[][]被初始化了，那么里面的元素就是全部0；
+        int paL[][] = new int[train.getNumLabels()][0];
+        int visted[] = new int[train.getNumLabels()];
+        Arrays.fill(visted,-1);
+        visted[root] = 0;
+        //treeify(int:root=0树的根节点,int[标签数目][标签数目]：paM存储的是标签之间是否有边，有边则标签号交汇处值为1，int[标签数][0]：0，int[标签数]：visited记录标签是否被访问，[0，-1，-1，-1，-1，-1] )
+        treeify(root,paM,paL, visted);
+        Arrays.sort(visted);
+        return visted;
     }
 
     public double[] flatten(double[][] arr) {
@@ -478,6 +502,17 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         return idx;
     }
 
+    public int maxIndex(double[] a) {
+        double init = a[0];
+        int idx = 0;
+        for (int i = 1; i < a.length; i++) {
+            if(a[i] > init) {
+                init = a[i];
+                idx = i;
+            }
+        }
+        return idx;
+    }
 
 
 }

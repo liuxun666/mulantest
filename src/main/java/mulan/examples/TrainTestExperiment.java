@@ -18,6 +18,7 @@ package mulan.examples;
 import mulan.classifier.transformation.AttentionDoubleLayerCC;
 import mulan.classifier.transformation.BinaryRelevance;
 import mulan.classifier.transformation.ClassifierChain;
+import mulan.classifier.transformation.PageRankDoubleLayerCC;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.evaluation.Evaluation;
@@ -78,12 +79,11 @@ public class TrainTestExperiment {
 
             Classifier brClassifier = new SMO();
 //            BinaryRelevance br = new BinaryRelevance(brClassifier);
-            AttentionDoubleLayerCC cc = new AttentionDoubleLayerCC(brClassifier, brClassifier);
+            PageRankDoubleLayerCC cc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
 //            br.setDebug(true);
             cc.setDebug(true);
-            train.getDataSet();
-
-            cc.getLabelRank(train);
+            cc.build(train);
+//            cc.getLabelRank(train);
 //            br.build(train);
 //            cc.build(train);
 //            cc.makePrediction(train.getDataSet().instance(0));
