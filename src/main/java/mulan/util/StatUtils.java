@@ -65,9 +65,9 @@ public abstract class StatUtils {
 	 * @param	x	 	label value
 	 * @return 	P(Y_j==k) in Y.
 	 */
-	//p(double[][]:±êÇ©µÄ¾ØÕó£¬int£º±êÇ©Ë÷ÒıºÅ £¬int£º±êÇ©Öµ£º0»ò1»ò-1)
+	//p(double[][]:æ ‡ç­¾çš„çŸ©é˜µï¼Œintï¼šæ ‡ç­¾ç´¢å¼•å· ï¼Œintï¼šæ ‡ç­¾å€¼ï¼š0æˆ–1æˆ–-1)
 	public static double p(double Y[][], int j, int k) {
-		int N = Y.length;//NµÄÖµ¿ÉÄÜÊÇL,¼´ÊÇ±êÇ©µÄÊıÄ¿
+		int N = Y.length;//Nçš„å€¼å¯èƒ½æ˜¯L,å³æ˜¯æ ‡ç­¾çš„æ•°ç›®
 		double p = 0.0001;
 		for(int i = 0; i < N; i++) {
 			if ((int)Math.round(Y[i][j]) == k) {
@@ -78,7 +78,7 @@ public abstract class StatUtils {
 	}
 
 	public static double p(double Y[][], int j, double k) {
-		int N = Y.length;//NµÄÖµ¿ÉÄÜÊÇL,¼´ÊÇ±êÇ©µÄÊıÄ¿
+		int N = Y.length;//Nçš„å€¼å¯èƒ½æ˜¯L,å³æ˜¯æ ‡ç­¾çš„æ•°ç›®
 		double p = 0.0001;
 		for(int i = 0; i < N; i++) {
 			if ((int)Math.round(Y[i][j]) == (int)Math.round(k)) {
@@ -203,7 +203,7 @@ public abstract class StatUtils {
 	}
 
 	/**
-	 * I - Information Gain. //ĞÅÏ¢ÔöÒæ
+	 * I - Information Gain. //ä¿¡æ¯å¢ç›Š
 	 * Multi-target friendly (does not assume binary labels).
 	 * @return I(Y_j;Y_k) in dataset D.
 	 */
@@ -218,7 +218,7 @@ public abstract class StatUtils {
 				I += p_xy * Math.log ( p_xy / ( p_x * p_y) );
 			}
 		}
-		//·µ»ØµÄÊÇ±êÇ©Ö®¼äµÄĞÅÏ¢ÔöÒæ
+		//è¿”å›çš„æ˜¯æ ‡ç­¾ä¹‹é—´çš„ä¿¡æ¯å¢ç›Š
 		return I;
 	}
 
@@ -233,7 +233,7 @@ public abstract class StatUtils {
 				I += p_xy * Math.log ( p_xy / ( p_x * p_y) );
 			}
 		}
-		//·µ»ØµÄÊÇ±êÇ©Ö®¼äµÄĞÅÏ¢ÔöÒæ
+		//è¿”å›çš„æ˜¯æ ‡ç­¾ä¹‹é—´çš„ä¿¡æ¯å¢ç›Š
 		return I;
 	}
 
@@ -317,12 +317,12 @@ public abstract class StatUtils {
 		for(int j = 0; j < L; j++) {
 			for(int k = j+1; k < L; k++) {
 				// get I(Y_j;X_k)
-				//I(intsances£ºD£¬int j£¬int k):¾ÍÊÇ¼ÆËãĞÅÏ¢ÔöÒæµÄ£¬
-				//¼ÆËãÔÚÊı¾İ¼¯DÉÏ£¬I(Y_j;Y_k)±êÇ©Y_jÓëY_kµÄĞÅÏ¢ÔöÒæ
+				//I(intsancesï¼šDï¼Œint jï¼Œint k):å°±æ˜¯è®¡ç®—ä¿¡æ¯å¢ç›Šçš„ï¼Œ
+				//è®¡ç®—åœ¨æ•°æ®é›†Dä¸Šï¼ŒI(Y_j;Y_k)æ ‡ç­¾Y_jä¸Y_kçš„ä¿¡æ¯å¢ç›Š
 				M[j][k] = I(D,j,k);
 			}
 		}
-		//MÖĞ´æ´¢µÄ¾ÍÊÇ±êÇ©Ö®¼äµÄĞÅÏ¢ÔöÒæ
+		//Mä¸­å­˜å‚¨çš„å°±æ˜¯æ ‡ç­¾ä¹‹é—´çš„ä¿¡æ¯å¢ç›Š
 		return M;
 	}
 
@@ -331,14 +331,61 @@ public abstract class StatUtils {
 		for(int j = 0; j < L; j++) {
 			for(int k = j+1; k < L; k++) {
 				// get I(Y_j;X_k)
-				//I(intsances£ºD£¬int j£¬int k):¾ÍÊÇ¼ÆËãĞÅÏ¢ÔöÒæµÄ£¬
-				//¼ÆËãÔÚÊı¾İ¼¯DÉÏ£¬I(Y_j;Y_k)±êÇ©Y_jÓëY_kµÄĞÅÏ¢ÔöÒæ
-				M[j][k] = I(D,j,k);
+				//I(intsancesï¼šDï¼Œint jï¼Œint k):å°±æ˜¯è®¡ç®—ä¿¡æ¯å¢ç›Šçš„ï¼Œ
+				//è®¡ç®—åœ¨æ•°æ®é›†Dä¸Šï¼ŒI(Y_j;Y_k)æ ‡ç­¾Y_jä¸Y_kçš„ä¿¡æ¯å¢ç›Š
+				M[j][k] = I(D, j, k);
 			}
 		}
-		//MÖĞ´æ´¢µÄ¾ÍÊÇ±êÇ©Ö®¼äµÄĞÅÏ¢ÔöÒæ
+		//Mä¸­å­˜å‚¨çš„å°±æ˜¯æ ‡ç­¾ä¹‹é—´çš„ä¿¡æ¯å¢ç›Š
 		return M;
 	}
+
+	public static double[][] margDepMatrix(int[][] D, int L) {
+		double M[][] = new double[L][L];
+		for(int j = 0; j < L; j++) {
+			for(int k = j+1; k < L; k++) {
+				// get I(Y_j;X_k)
+				//I(intsancesï¼šDï¼Œint jï¼Œint k):å°±æ˜¯è®¡ç®—ä¿¡æ¯å¢ç›Šçš„ï¼Œ
+				//è®¡ç®—åœ¨æ•°æ®é›†Dä¸Šï¼ŒI(Y_j;Y_k)æ ‡ç­¾Y_jä¸Y_kçš„ä¿¡æ¯å¢ç›Š
+				M[j][k] = mi(D, j, k);
+			}
+		}
+		//Mä¸­å­˜å‚¨çš„å°±æ˜¯æ ‡ç­¾ä¹‹é—´çš„ä¿¡æ¯å¢ç›Š
+		return M;
+	}
+
+	public static double mi(int[][] D, int x, int y) {
+		double p_xy = Pxy(D, x, y);
+		double p_x0 = Px_v(D, x, 0);
+		double p_x1 = Px_v(D, x, 1);
+		double p_y0 = Px_v(D, y, 0);
+		double p_y1 = Px_v(D, y, 1);
+		return p_xy * Math.log(p_xy / (p_x0 * p_y0)) + p_xy * Math.log(p_xy / (p_x1 * p_y1));
+	}
+
+
+	public static double Pxy(int[][] D, int idx1, int idx2){
+		int x = D[0][idx1];
+		int y = D[0][idx2];
+		double sum = 0.0000001;
+		for (int i = 1; i < D.length; i++) {
+			if(D[i][idx1] == x && D[i][idx2] == y){
+				sum += 1;
+			}
+		}
+		return sum / D.length;
+	}
+
+	public static double Px_v(int[][] D, int idx1, int value){
+		double sum = 0.0000001;
+		for (int i = 0; i < D.length; i++) {
+			if(D[i][idx1] == value){
+				sum += 1;
+			}
+		}
+		return sum / D.length;
+	}
+
 
 	// A bit of a useless function -- get rid of it somehow?
 	private static double[] fillError(Result result, int L) {
@@ -412,7 +459,7 @@ public abstract class StatUtils {
 	/**
 	 * LEAD. 
 	 * Do the chi-squared LEAD test on all labels in D.
-	 * ÔÚÊı¾İ¼¯DÉÏ£¬¶ÔËùÓĞ±êÇ©×ö¿¨·½¼ìÑé£¬¿¨·½¼ìÑé¾ÍÊÇºâÁ¿±êÇ©Êµ¼ÊÖµÓëÀíÂÛÖµÖ®¼äµÄ·ûºÏ³Ì¶È
+	 * åœ¨æ•°æ®é›†Dä¸Šï¼Œå¯¹æ‰€æœ‰æ ‡ç­¾åšå¡æ–¹æ£€éªŒï¼Œå¡æ–¹æ£€éªŒå°±æ˜¯è¡¡é‡æ ‡ç­¾å®é™…å€¼ä¸ç†è®ºå€¼ä¹‹é—´çš„ç¬¦åˆç¨‹åº¦
 	 * We would expect the 3 kinds of error to be uncorrelacted.
 	 * However, if they are significantly correlated, this means that there is conditional dependence!
 	 */

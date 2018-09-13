@@ -13,6 +13,9 @@ public class PageRank {
     public PageRank(double[][] data) {
         this.data = data;
     }
+    public PageRank(int[][] data) {
+        this.data = Arrays.stream(data).map(ds -> Arrays.stream(ds).mapToDouble(d -> (double)d).toArray()).toArray(double[][]::new);
+    }
 
 
     public Matrix getPr() {

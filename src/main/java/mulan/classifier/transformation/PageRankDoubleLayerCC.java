@@ -41,8 +41,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
@@ -282,9 +280,9 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
     }
 
     private int[] getCCChain(MultiLabelInstances train) {
-        Stream<double[]> list = train.getDataSet().stream()
-                .map(instance -> Arrays.stream(train.getLabelIndices()).mapToDouble(i -> instance.value(i)).toArray());
-        double[][] labels = list.toArray(double[][]::new);
+        Stream<int[]> list = train.getDataSet().stream()
+                .map(instance -> Arrays.stream(train.getLabelIndices()).map(i -> (int)instance.value(i)).toArray());
+        int[][] labels = list.toArray(int[][]::new);
         for (int i = 0; i < 10; i++) {
             System.out.println(Arrays.toString(labels[i]));
         }
