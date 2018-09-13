@@ -20,6 +20,8 @@ import mulan.rbms.M;
 import weka.core.Instance;
 import weka.core.Instances;
 
+import java.util.Arrays;
+
 /**
  * StatUtils - Helpful statistical functions.
  * @author Jesse Read (jesse@tsc.uc3m.es)
@@ -209,7 +211,6 @@ public abstract class StatUtils {
 	 */
 	public static double I(Instances D, int j, int k) {
 		double I = 0.0;
-		System.out.println(D.attribute(j).numValues());
 		for(int x = 0; x < D.attribute(j).numValues(); x++) {
 			double p_x = p(D,j,x);
 			for(int y = 0; y < D.attribute(k).numValues(); y++) {
@@ -343,10 +344,7 @@ public abstract class StatUtils {
 	public static double[][] margDepMatrix(int[][] D, int L) {
 		double M[][] = new double[L][L];
 		for(int j = 0; j < L; j++) {
-			for(int k = j+1; k < L; k++) {
-				// get I(Y_j;X_k)
-				//I(intsances：D，int j，int k):就是计算信息增益的，
-				//计算在数据集D上，I(Y_j;Y_k)标签Y_j与Y_k的信息增益
+			for(int k = j + 1; k < L; k++) {
 				M[j][k] = mi(D, j, k);
 			}
 		}
@@ -354,36 +352,63 @@ public abstract class StatUtils {
 		return M;
 	}
 
-	public static double mi(int[][] D, int x, int y) {
-		double p_xy = Pxy(D, x, y);
-		double p_x0 = Px_v(D, x, 0);
-		double p_x1 = Px_v(D, x, 1);
-		double p_y0 = Px_v(D, y, 0);
-		double p_y1 = Px_v(D, y, 1);
-		return p_xy * Math.log(p_xy / (p_x0 * p_y0)) + p_xy * Math.log(p_xy / (p_x1 * p_y1));
+	public static double mi(int[][] D, int idx1, int idx2) {
+		double s = 0;
+        double[][] tmp = new double[2][2];
+        for (int i = 0; i < tmp.length; i++) {
+            for (int j = 0; j < tmp[i].length; j++) {
+                tmp[i][j] = -1;
+            }
+        }
+
+        for (int i = 0; i < 2; i++) {
+            double px = Px_v(D, idx1, i);
+            for (int j = 0; j < 2; j++) {
+                double py = Px_v(D, idx2, j);
+                double p_xy = Pxy(D, idx1, idx2, i, j);
+                s += p_xy * (Math.log(p_xy / (px * py)) / Math.log(2.0));
+            }
+        }
+
+//        for (int i = 0; i < D.length; i++) {
+////            if(tmp[D[i][idx1]][D[i][idx2]] != -1){
+////                s += tmp[D[i][idx1]][D[i][idx2]];
+////            }else{
+//                double p_xy = Pxy(D, idx1, idx2, D[i][idx1], D[i][idx2]);
+//                double px = Px_v(D, idx1, D[i][idx1]);
+//                double py = Px_v(D, idx2, D[i][idx2]);
+//                double t = p_xy * Math.log(p_xy / (px * py));
+//                s += t;
+//                tmp[D[i][idx1]][D[i][idx2]] = t;
+////            }
+//
+//        }
+
+		return s;
 	}
 
 
-	public static double Pxy(int[][] D, int idx1, int idx2){
-		int x = D[0][idx1];
-		int y = D[0][idx2];
-		double sum = 0.0000001;
-		for (int i = 1; i < D.length; i++) {
+	public static double Pxy(int[][] D, int idx1, int idx2, int x, int y){
+		double sum = 0.01;
+		for (int i = 0; i < D.length; i++) {
 			if(D[i][idx1] == x && D[i][idx2] == y){
 				sum += 1;
 			}
 		}
+		if(sum == 0.01) System.out.println(idx1 + " -> " + idx2 + " sum = 0");
 		return sum / D.length;
 	}
 
-	public static double Px_v(int[][] D, int idx1, int value){
-		double sum = 0.0000001;
+	public static double Px_v(int[][] D, int idx, int value){
+		double sum = 0.01;
 		for (int i = 0; i < D.length; i++) {
-			if(D[i][idx1] == value){
+			if(D[i][idx] == value){
 				sum += 1;
 			}
 		}
-		return sum / D.length;
+        if(sum == 0.01) System.out.println(idx  + " sum = 0");
+
+        return sum / D.length;
 	}
 
 

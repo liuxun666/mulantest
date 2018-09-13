@@ -47,12 +47,12 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\birds\\";
-            String filestem = "birds";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\enron\\";
+            String filestem = "enron";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");
-            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + "-train.arff", path + filestem + ".xml");
+            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + ".arff", path + filestem + ".xml");
 
             // split the data set into train and test
             Instances dataSet = mlDataSet.getDataSet();
@@ -78,19 +78,16 @@ public class TrainTestExperiment {
             Evaluation results1;
 
             Classifier brClassifier = new SMO();
-//            BinaryRelevance br = new BinaryRelevance(brClassifier);
+            ClassifierChain br = new ClassifierChain(brClassifier);
             PageRankDoubleLayerCC cc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
-//            br.setDebug(true);
+            br.setDebug(true);
             cc.setDebug(true);
+            br.build(train);
             cc.build(train);
-//            cc.getLabelRank(train);
-//            br.build(train);
-//            cc.build(train);
-//            cc.makePrediction(train.getDataSet().instance(0));
-//            results = eval.evaluate(br, test, train);
-//            results1 = eval.evaluate(cc, test, train);
-//            System.out.println(results);
-//            System.out.println(results1);
+            results = eval.evaluate(br, test, train);
+            results1 = eval.evaluate(cc, test, train);
+            System.out.println(results);
+            System.out.println(results1);
         } catch (Exception e) {
             e.printStackTrace();
         }

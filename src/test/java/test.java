@@ -1,32 +1,16 @@
+import mulan.rbms.M;
+import mulan.util.A;
+import mulan.util.StatUtils;
 import weka.core.matrix.Matrix;
 
 import java.util.Arrays;
 
 public class test {
     public static void main(String[] args) throws Exception {
-        double[][] data = new double[5][4];
-        /**
-         * {0, 1, 2, 2}
-         * {1, 0, 0, 1}
-         * {2, 0, 0, 1}
-         * {2, 1, 1, 0}
-         */
-        data[0] = new double[]{1., 0., 0., 1.};
-        data[1] = new double[]{1., 1., 0., 1.};
-        data[2] = new double[]{0., 0., 1., 1.};
-        data[3] = new double[]{1., 0., 1., 0.};
-        data[4] = new double[]{1., 0., 1., 0.};
-        PageRank pageRank = new PageRank(data).build();
-        Matrix pr = pageRank.getPr();
-        int iterator = pageRank.getIterator();
-
-        System.out.print("倒数第一次迭代结果：");
-
-        System.out.print("最后结果：");
-
-        pr.print(2, 2);
-
-        System.out.print("迭代次数：" + iterator);
+        int[] a = new int[]{1, 2, 3};
+        int[] b = new int[]{11,12};
+        System.arraycopy(b, 0, a, 1, b.length);
+        System.out.println(A.toString(a));
 
     }
 

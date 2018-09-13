@@ -37,10 +37,7 @@ import weka.core.Instance;
 import weka.core.Instances;
 import weka.filters.unsupervised.attribute.Remove;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -130,6 +127,8 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
     protected double samplingPercentage = 67;
 
     private MultiLabelInstances train;
+    private ArrayList<Integer> chain = new ArrayList<>();
+
 
     private double[][][] layer_1Predict;
 
@@ -160,9 +159,11 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
     protected void buildInternal(MultiLabelInstances train) throws Exception {
 //        IntStream stream = Arrays.stream(train.getLabelIndices());
 
-        int[] chain = getCCChain(train);
-        System.out.println(Arrays.toString(chain));
-
+        int[] list = getCCChain(train);
+        System.out.println(Arrays.toString(list));
+        for (int c: list) {
+            chain.add(c);
+        }
         this.train = train;
         layer_2_Attr = layer_2_Attr();
         numOfModels = train.getNumLabels();
@@ -203,36 +204,36 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         }
         //layer_1 done
         //STEP2: 将多个单分类器分别输出对样本的预测
-        double[][][] layer_1Predict = new double[trainDataset.numInstances()][numLabels][];
+        double[][] layer_1Predict = new double[trainDataset.numInstances()][numLabels];
         for (int ii = 0; ii < trainDataset.numInstances(); ii++){
-            double[][] tmpScore = new double[numLabels][];
+            double[] tmpScore = new double[numLabels];
             Instance nextElement = trainDataset.get(ii);
             for (int i = 0; i < numLabels; i++) {
                 double[] doubles = layer_1[i].distributionForInstance(nextElement);
-                tmpScore[i] = doubles;
+                tmpScore[i] = (doubles[0] > doubles[1]) ? 0 : 1;
             }
             layer_1Predict[ii] = tmpScore;
         }
 
 
-        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
-        List<DataPair> dp = new ArrayList<>();
-        for (int i = 0; i < layer_1Predict.length; i++) {
-            DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
-            dp.add(d);
-        }
-
-        bp = new BPMLL(42);
-        bp.setDebug(true);
-        bp.setTrainingEpochs(200);
-        bp.setHiddenLayers(new int[]{32, 16}); //test it
-        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
-        //建立第二层数据
-        double[][] layer_2_addData = new double[layer_1Predict.length][];
-        for (int i = 0; i < layer_1Predict.length; i++) {
-            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
-            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-        }
+//        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
+//        List<DataPair> dp = new ArrayList<>();
+//        for (int i = 0; i < layer_1Predict.length; i++) {
+//            DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
+//            dp.add(d);
+//        }
+//
+//        bp = new BPMLL(42);
+//        bp.setDebug(true);
+//        bp.setTrainingEpochs(200);
+//        bp.setHiddenLayers(new int[]{32, 16}); //test it
+//        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
+//        //建立第二层数据
+//        double[][] layer_2_addData = new double[layer_1Predict.length][];
+//        for (int i = 0; i < layer_1Predict.length; i++) {
+//            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
+//            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
+//        }
 
         //layer_2 data
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
@@ -244,7 +245,11 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
             for (int j = 0; j < numLabels; j++) {
                 values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
             }
-            System.arraycopy(layer_2_addData[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+            System.arraycopy(layer_1Predict[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+            //将原标签向后移
+            for (int j = 0; j < numLabels; j++) {
+                values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
+            }
             Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
             metaInstance.setDataset(layer_2_data);
 
@@ -252,14 +257,18 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         }
 
         for (int ii = 0; ii < numLabels; ii++) {
-            layer_2[ii] = new FilteredClassifier();
-            layer_2[ii].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
+
+            int index = chain.indexOf(ii);
+
+            layer_2[index] = new FilteredClassifier();
+            layer_2[index].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
             int[] indicesToRemove = new int[numLabels - 1];
             int counter2 = 0;
             //将不是当前分类器的标签加入数组
             for (int counter1 = 0; counter1 < numLabels; counter1++) {
-                if(counter1 != ii){
-                    indicesToRemove[counter2] = labelIndices[counter1];
+                if(counter1 != index){
+                    //新增了numLabels个特征在label之前， label的index需要加上numLabels
+                    indicesToRemove[counter2] = labelIndices[counter1] + numLabels;
                     counter2++;
                 }
             }
@@ -268,13 +277,17 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
             remove.setAttributeIndicesArray(indicesToRemove);
             remove.setInputFormat(layer_2_data);
             remove.setInvertSelection(false);
-            layer_2[ii].setFilter(remove);
+            layer_2[index].setFilter(remove);
             //设置当前分类器对应的标签列作为标签列
-            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + ii);
-            debug("Bulding layer_2 model " + (ii + 1) + "/" + numLabels);
-            layer_2[ii].buildClassifier(layer_2_data);
-            //暂时不更新
-//            tempInstance.setValue(labelIndices[i], maxIndex);
+            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + index);
+            debug("Bulding layer_2 model " + (index + 1) + "/" + numLabels);
+            layer_2[index].buildClassifier(layer_2_data);
+            //更新数据
+            for (Instance ins : layer_2_data) {
+                double[] doubles = layer_2[index].distributionForInstance(ins);
+                int predict = (doubles[0] > doubles[1]) ? 0 : 1;
+                ins.setValue(layer_2_data.classIndex(), predict);
+            }
         }
 
     }
@@ -283,23 +296,20 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         Stream<int[]> list = train.getDataSet().stream()
                 .map(instance -> Arrays.stream(train.getLabelIndices()).map(i -> (int)instance.value(i)).toArray());
         int[][] labels = list.toArray(int[][]::new);
-        for (int i = 0; i < 10; i++) {
-            System.out.println(Arrays.toString(labels[i]));
-        }
 
         PageRank pageRank = new PageRank(labels).build();
         double[] pr = pageRank.getPr().getColumnPackedCopy();
 
         int root = maxIndex(pr);
         //catch StatUtils.getYFromD
-        System.out.println(train.getDataSet().classIndex());
         double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
+        System.out.println("互信息矩阵 ：");
         System.out.println(M.toString(ud));
         EdgeWeightedGraph G = new EdgeWeightedGraph(train.getNumLabels());
 
         for(int i = 0; i < train.getNumLabels(); i++) {
             for(int j = i+1; j < train.getNumLabels(); j++) {
-                Edge e = new Edge(i, j, ud[i][j]);
+                Edge e = new Edge(i, j, -ud[i][j]);
                 G.addEdge(e);
             }
         }
@@ -318,8 +328,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 //        list.stream().limit(100).forEach(System.out::println);
 //        new PageRank(trainDataset)
 
-        if (getDebug())
-            System.out.println("Make a Tree from Root "+root);
+        System.out.println("Make a Tree from Root "+root);
         //这里paL[][]被初始化了，那么里面的元素就是全部0；
         int paL[][] = new int[train.getNumLabels()][0];
         int visted[] = new int[train.getNumLabels()];
@@ -327,7 +336,6 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         visted[root] = 0;
         //treeify(int:root=0树的根节点,int[标签数目][标签数目]：paM存储的是标签之间是否有边，有边则标签号交汇处值为1，int[标签数][0]：0，int[标签数]：visited记录标签是否被访问，[0，-1，-1，-1，-1，-1] )
         treeify(root,paM,paL, visted);
-        Arrays.sort(visted);
         return visted;
     }
 
@@ -396,41 +404,58 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
         boolean[] bipartition = new boolean[numLabels];
         double[] confidences = new double[numLabels];
+        Instance metaInstance = null;
+
+        //第一层 输出
+        double[] layer_1_out = new double[numOfModels];
+        for (int j = 0; j < numOfModels; j++) {
+            double[] out = layer_1[j].distributionForInstance(instance);
+            int predict = (out[0] > out[1]) ? 0 : 1;
+            layer_1_out[j] = predict;
+
+        }
+
+        Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
+        double[] values = new double[layer_2_data.numAttributes()];
+        for (int m = 0; m < featureIndices.length; m++) {
+            values[m] = instance.value(featureIndices[m]);
+        }
+        System.arraycopy(layer_1_out, 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+        metaInstance = DataUtils.createInstance(train.getDataSet().instance(0), 1, values);
+        metaInstance.setDataset(layer_2_data);
+        //将原标签向后移
+        for (int j = 0; j < numLabels; j++) {
+            values[labelIndices[j] + numLabels] = instance.value(labelIndices[j]);
+        }
 
         for (int i = 0; i < numOfModels; i++) {
-            double[][] layer_1_out = new double[numOfModels][];
-            for (int j = 0; j < numOfModels; j++) {
-                layer_1_out[j] = layer_1[j].distributionForInstance(instance);
-            }
 
-            double[] predict = bp.predict(flatten(layer_1_out)).getConfidences();
-
-            Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
-            double[] values = new double[layer_2_data.numAttributes()];
-            for (int m = 0; m < featureIndices.length; m++) {
-                values[m] = instance.value(featureIndices[m]);
-            }
-            System.arraycopy(predict, 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
-            for (int j = 0; j < numLabels; j++) {
-                values[labelIndices[j] + numLabels] = instance.value(labelIndices[j]);
-            }
-            Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
-            metaInstance.setDataset(layer_2_data);
-            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + i);
-
-            metaInstance.setClassValue(instance.value(labelIndices[i]));
+            int index = chain.indexOf(i);
 
 
-            double[] doubles = layer_2[i].distributionForInstance(metaInstance);
+            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + index);
+
+            metaInstance.setClassValue(instance.value(labelIndices[index]));
+
+
+
+            double[] doubles = layer_2[index].distributionForInstance(metaInstance);
 
             int maxIndex = (doubles[0] > doubles[1]) ? 0 : 1;
+//            if(i > 0){
+//                System.out.println("当前数据：" + metaInstance.classValue());
+//                System.out.println("前一个模型数据: " + metaInstance.value(labelIndices[chain.indexOf(i - 1)]));
+//            }
+            //更新数据
+            metaInstance.setValue(metaInstance.classIndex() - numLabels, maxIndex);
+
 
             // Ensure correct predictions both for class values {0,1} and {1,0}
-            Attribute classAttribute = layer_2[i].getFilter().getOutputFormat().classAttribute();
-            bipartition[i] = (classAttribute.value(maxIndex).equals("1")) ? true : false;
+            Attribute classAttribute = layer_2[index].getFilter().getOutputFormat().classAttribute();
+            bipartition[index] = (classAttribute.value(maxIndex).equals("1")) ? true : false;
 
             // The confidence of the label being equal to 1
-            confidences[i] = doubles[classAttribute.indexOfValue("1")];
+            confidences[index] = doubles[classAttribute.indexOfValue("1")];
 
 //            暂时不更新
 //            tempInstance.setValue(labelIndices[i], maxIndex);
