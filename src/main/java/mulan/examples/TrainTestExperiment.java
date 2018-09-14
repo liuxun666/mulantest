@@ -47,8 +47,8 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\enron\\";
-            String filestem = "enron";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
+            String filestem = "emotions";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");

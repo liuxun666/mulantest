@@ -28,6 +28,10 @@ import mulan.rbms.M;
 import mulan.util.A;
 import mulan.util.PageRank;
 import mulan.util.StatUtils;
+import org.jgrapht.alg.interfaces.VertexScoringAlgorithm;
+import org.jgrapht.graph.DefaultEdge;
+import org.jgrapht.graph.DirectedPseudograph;
+import org.jgrapht.graph.DirectedWeightedPseudograph;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.meta.FilteredClassifier;
@@ -292,19 +296,57 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
     }
 
+    private double[] pageRank(int[][] labels) {
+
+        double[][] PR1 = new double[labels[0].length][labels[0].length]; //出度
+        for (int i = 0; i < labels.length; i++) {
+            for (int j = 0; j < labels[i].length; j++) {
+                if(labels[i][j] == 1){
+                    for (int l = 0; l < labels[i].length; l++) {
+                        if(labels[i][l] == 1){
+                            PR1[l][j] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        DirectedWeightedPseudograph<String, DefaultEdge> g = new DirectedWeightedPseudograph<>(DefaultEdge.class);
+        for (int i = 0; i < PR1.length; i++) {
+            g.addVertex(String.valueOf(i));
+        }
+        for (int i = 0; i < PR1.length; i++) {
+            for (int j = 0; j < PR1[i].length; j++) {
+                if(PR1[i][j] > 0){
+                    g.setEdgeWeight(g.addEdge(String.valueOf(i), String.valueOf(j)), PR1[i][j]);
+                }
+            }
+        }
+        VertexScoringAlgorithm<String, Double> pr = new org.jgrapht.alg.scoring.PageRank<>(g);
+        double[] res = new double[PR1.length];
+        for (int i = 0; i < res.length; i++) {
+            res[i] = pr.getVertexScore(String.valueOf(i));
+        }
+        return res;
+
+    }
+
     private int[] getCCChain(MultiLabelInstances train) {
         Stream<int[]> list = train.getDataSet().stream()
                 .map(instance -> Arrays.stream(train.getLabelIndices()).map(i -> (int)instance.value(i)).toArray());
         int[][] labels = list.toArray(int[][]::new);
 
-        PageRank pageRank = new PageRank(labels).build();
-        double[] pr = pageRank.getPr().getColumnPackedCopy();
-
+//        PageRank pageRank = new PageRank(labels).build();
+//        double[] pr = pageRank.getPr().getColumnPackedCopy();
+        double[] pr = pageRank(labels);
+        System.out.println("pr" + Arrays.toString(pr));
         int root = maxIndex(pr);
-        //catch StatUtils.getYFromD
-        double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
+//        int root = minIndex(pr);
+//        int root = 0;
+//        double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
+        double[][] ud = StatUtils.mInfomation(labels, train.getNumLabels());
         System.out.println("互信息矩阵 ：");
         System.out.println(M.toString(ud));
+//        System.out.println(M.toString(ud1));
         EdgeWeightedGraph G = new EdgeWeightedGraph(train.getNumLabels());
 
         for(int i = 0; i < train.getNumLabels(); i++) {
@@ -328,7 +370,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 //        list.stream().limit(100).forEach(System.out::println);
 //        new PageRank(trainDataset)
 
-        System.out.println("Make a Tree from Root "+root);
+        System.out.println("Make a Tree from Root " + root);
         //这里paL[][]被初始化了，那么里面的元素就是全部0；
         int paL[][] = new int[train.getNumLabels()][0];
         int visted[] = new int[train.getNumLabels()];
@@ -530,6 +572,18 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         int idx = 0;
         for (int i = 1; i < a.length; i++) {
             if(a[i] > init) {
+                init = a[i];
+                idx = i;
+            }
+        }
+        return idx;
+    }
+
+    public int minIndex(double[] a) {
+        double init = a[0];
+        int idx = 0;
+        for (int i = 1; i < a.length; i++) {
+            if(a[i] < init) {
                 init = a[i];
                 idx = i;
             }

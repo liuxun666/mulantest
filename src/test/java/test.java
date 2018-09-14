@@ -1,5 +1,6 @@
 import mulan.rbms.M;
 import mulan.util.A;
+import mulan.util.MutualInformation;
 import mulan.util.StatUtils;
 import weka.core.matrix.Matrix;
 
@@ -7,10 +8,9 @@ import java.util.Arrays;
 
 public class test {
     public static void main(String[] args) throws Exception {
-        int[] a = new int[]{1, 2, 3};
-        int[] b = new int[]{11,12};
-        System.arraycopy(b, 0, a, 1, b.length);
-        System.out.println(A.toString(a));
+        double[][] a = new double[][]{{1, 0, 1, 0, 1, 0},{0, 1, 1, 0, 1}};
+        System.out.println(M.toString(StatUtils.margDepMatrix(a, 2)));
+        System.out.println(MutualInformation.calculateMutualInformation(a[0], a[1]));
 
     }
 

@@ -328,17 +328,13 @@ public abstract class StatUtils {
 	}
 
 	public static double[][] margDepMatrix(double[][] D, int L) {
-		double M[][] = new double[L][L];
-		for(int j = 0; j < L; j++) {
-			for(int k = j+1; k < L; k++) {
-				// get I(Y_j;X_k)
-				//I(intsances：D，int j，int k):就是计算信息增益的，
-				//计算在数据集D上，I(Y_j;Y_k)标签Y_j与Y_k的信息增益
-				M[j][k] = I(D, j, k);
+		int[][] D_ = new int[D.length][D[0].length];
+		for (int i = 0; i < D.length; i++) {
+			for (int j = 0; j < D[i].length; j++) {
+				D_[i][j] = (int)D[i][j];
 			}
 		}
-		//M中存储的就是标签之间的信息增益
-		return M;
+		return margDepMatrix(D_, L);
 	}
 
 	public static double[][] margDepMatrix(int[][] D, int L) {
@@ -346,6 +342,23 @@ public abstract class StatUtils {
 		for(int j = 0; j < L; j++) {
 			for(int k = j + 1; k < L; k++) {
 				M[j][k] = mi(D, j, k);
+			}
+		}
+		//M中存储的就是标签之间的信息增益
+		return M;
+	}
+
+	public static double[][] mInfomation(int[][] D, int L) {
+		double[][] D_ = new double[D.length][D[0].length];
+		for (int i = 0; i < D.length; i++) {
+			for (int j = 0; j < D[i].length; j++) {
+				D_[i][j] = (double)D[i][j];
+			}
+		}
+		double M[][] = new double[L][L];
+		for(int j = 0; j < L; j++) {
+			for(int k = j + 1; k < L; k++) {
+				M[j][k] = MutualInformation.calculateMutualInformation(D_[j], D_[k]);
 			}
 		}
 		//M中存储的就是标签之间的信息增益
