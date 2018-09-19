@@ -15,15 +15,13 @@
  */
 package mulan.examples;
 
-import mulan.classifier.transformation.AttentionDoubleLayerCC;
-import mulan.classifier.transformation.BinaryRelevance;
-import mulan.classifier.transformation.ClassifierChain;
-import mulan.classifier.transformation.PageRankDoubleLayerCC;
+import mulan.classifier.transformation.*;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.evaluation.Evaluation;
 import mulan.evaluation.Evaluator;
 import weka.classifiers.Classifier;
+import weka.classifiers.bayes.BayesNet;
 import weka.classifiers.bayes.NaiveBayes;
 import weka.classifiers.functions.SMO;
 import weka.core.Instances;
@@ -47,8 +45,8 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
-            String filestem = "emotions";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\mediamill\\";
+            String filestem = "mediamill";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");

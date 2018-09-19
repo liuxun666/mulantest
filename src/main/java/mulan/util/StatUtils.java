@@ -379,7 +379,11 @@ public abstract class StatUtils {
             for (int j = 0; j < 2; j++) {
                 double py = Px_v(D, idx2, j);
                 double p_xy = Pxy(D, idx1, idx2, i, j);
-                s += p_xy * (Math.log(p_xy / (px * py)) / Math.log(2.0));
+                if(i == j){
+					s += p_xy * (Math.log(p_xy / (px * py)) / Math.log(2.0));
+				}else{
+                	s -= p_xy * (Math.log(p_xy / (px * py)) / Math.log(2.0));
+				}
             }
         }
 

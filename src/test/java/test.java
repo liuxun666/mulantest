@@ -2,15 +2,15 @@ import mulan.rbms.M;
 import mulan.util.A;
 import mulan.util.MutualInformation;
 import mulan.util.StatUtils;
+import weka.classifiers.bayes.net.search.local.K2;
 import weka.core.matrix.Matrix;
 
 import java.util.Arrays;
 
 public class test {
     public static void main(String[] args) throws Exception {
-        double[][] a = new double[][]{{1, 0, 1, 0, 1, 0},{0, 1, 1, 0, 1}};
-        System.out.println(M.toString(StatUtils.margDepMatrix(a, 2)));
-        System.out.println(MutualInformation.calculateMutualInformation(a[0], a[1]));
+        K2 k2 = new K2();
+
 
     }
 

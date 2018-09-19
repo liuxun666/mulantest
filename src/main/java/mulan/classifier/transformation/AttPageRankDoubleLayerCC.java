@@ -26,11 +26,9 @@ import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.rbms.M;
 import mulan.util.A;
-import mulan.util.PageRank;
 import mulan.util.StatUtils;
 import org.jgrapht.alg.interfaces.VertexScoringAlgorithm;
 import org.jgrapht.graph.DefaultEdge;
-import org.jgrapht.graph.DirectedPseudograph;
 import org.jgrapht.graph.DirectedWeightedPseudograph;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
@@ -39,9 +37,13 @@ import weka.classifiers.trees.J48;
 import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
+import weka.core.matrix.Matrix;
 import weka.filters.unsupervised.attribute.Remove;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 import java.util.stream.Stream;
 
 /**
@@ -55,7 +57,7 @@ import java.util.stream.Stream;
  * @author Grigorios Tsoumakas
  * @version 2012.02.27
  */
-public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner {
+public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner {
 
     /**
      * The number of classifier chain models
@@ -144,7 +146,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
     /**
      * Default constructor
      */
-    public PageRankDoubleLayerCC() {
+    public AttPageRankDoubleLayerCC() {
         this(new J48(), new J48());
     }
 
@@ -153,7 +155,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
      *
      * @param classifier the base classifier for each ClassifierChain model
      */
-    public PageRankDoubleLayerCC(Classifier classifier, Classifier layer2) {
+    public AttPageRankDoubleLayerCC(Classifier classifier, Classifier layer2) {
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
@@ -207,6 +209,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
         }
         //layer_1 done
+
         //STEP2: 将多个单分类器分别输出对样本的预测
         double[][] layer_1Predict = new double[trainDataset.numInstances()][numLabels];
         for (int ii = 0; ii < trainDataset.numInstances(); ii++){
@@ -220,27 +223,10 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         }
 
 
-//        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
-//        List<DataPair> dp = new ArrayList<>();
-//        for (int i = 0; i < layer_1Predict.length; i++) {
-//            DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
-//            dp.add(d);
-//        }
-//
-//        bp = new BPMLL(42);
-//        bp.setDebug(true);
-//        bp.setTrainingEpochs(200);
-//        bp.setHiddenLayers(new int[]{32, 16}); //test it
-//        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
-//        //建立第二层数据
-//        double[][] layer_2_addData = new double[layer_1Predict.length][];
-//        for (int i = 0; i < layer_1Predict.length; i++) {
-//            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
-//            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-//        }
-
-        //layer_2 data
+        //build layer_2 data
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
+        // data for BPMLL, input_size = train data featureindices + new feature(layer_1 output data) dim
+        double[][] netValues = new double[train.getNumInstances()][train.getDataSet().numAttributes()];
         for (int i = 0; i < train.getNumInstances(); i++) {
             double[] values = new double[layer_2_data.numAttributes()];
             for (int m = 0; m < featureIndices.length; m++) {
@@ -261,6 +247,41 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         }
 
 
+        List<List<DataPair>> dp = new ArrayList<>();
+        for (int i = 0; i < netValues.length; i++) {
+            double[] features = Arrays.copyOfRange(netValues[i], 0 , featureIndices.length + numLabels);
+            for (int j = 0; j < numLabels; j++) {
+                DataPair d = new DataPair(features, new double[]{netValues[i][featureIndices.length + numLabels + j]});
+                dp.get(j).add(d);
+            }
+        }
+        bp = new BPMLL(42);
+        bp.setDebug(true);
+        bp.setTrainingEpochs(200);
+        bp.setHiddenLayers(new int[]{featureIndices.length + numLabels}); //test it
+        // 1. do permute
+        // 2. do dense
+        // 3. do softmax
+        // 4. do permute
+        // 5. do multiply
+        for (int i = 0; i < numLabels; i++) {
+            BPMLL copy = (BPMLL) (bp.makeCopy());
+            copy.build(dp.get(i), featureIndices.length + numLabels, null, null, null);
+            for (int j = 0; j < dp.get(i).size(); j++) {
+                MultiLabelOutput predict = copy.predict(dp.get(i).get(j));
+                double[] softmax = softmax(predict.getConfidences());
+                double[] output = M.multiply(dp.get(i).get(j).getInput(), softmax);
+
+            }
+        }
+
+//        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
+        //建立第二层数据
+        double[][] layer_2_addData = new double[layer_1Predict.length][];
+        for (int i = 0; i < layer_1Predict.length; i++) {
+            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
+            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
+        }
 
         for (int ii = 0; ii < numLabels; ii++) {
 
