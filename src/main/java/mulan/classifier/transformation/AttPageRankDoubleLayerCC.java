@@ -264,6 +264,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         // 3. do softmax
         // 4. do permute
         // 5. do multiply
+        //TODO change to dl4j
         for (int i = 0; i < numLabels; i++) {
             BPMLL copy = (BPMLL) (bp.makeCopy());
             copy.build(dp.get(i), featureIndices.length + numLabels, null, null, null);
