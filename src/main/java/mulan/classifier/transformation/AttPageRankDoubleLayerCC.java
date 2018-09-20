@@ -340,7 +340,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
                 double[] fulldata = dataWithLayer1Output[i];
 
                 double[] featureData = Arrays.copyOfRange(fulldata, 0 , dl4jInputLength);
-                featureData = attentionData(featureData, ii);
+                featureData = attentionData(featureData, index);
 
                 System.arraycopy(featureData, 0, fulldata,0, featureData.length);
                 Instance ist = DataUtils.createInstance(train.getDataSet().instance(i), 1, fulldata);
@@ -594,20 +594,20 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         }
 
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, 1);
-        double[] values = new double[layer_2_data.numAttributes()];
+        double[] values = new double[featureIndices.length + numLabels];
         for (int m = 0; m < featureIndices.length; m++) {
             values[m] = instance.value(featureIndices[m]);
         }
-        System.arraycopy(layer_1_out, 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+        System.arraycopy(layer_1_out, 0, values, featureIndices.length, numLabels);
 
 
-        metaInstance = DataUtils.createInstance(train.getDataSet().instance(0), 1, values);
-        metaInstance.setDataset(layer_2_data);
+
         //将原标签向后移
         for (int j = 0; j < numLabels; j++) {
             values[labelIndices[j] + numLabels] = instance.value(labelIndices[j]);
         }
-
+        metaInstance = DataUtils.createInstance(train.getDataSet().instance(0), 1, values);
+        metaInstance.setDataset(layer_2_data);
         for (int i = 0; i < numOfModels; i++) {
 
             int index = chain.indexOf(i);
