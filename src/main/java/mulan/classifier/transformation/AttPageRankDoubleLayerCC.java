@@ -594,7 +594,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         }
 
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, 1);
-        double[] values = new double[featureIndices.length + numLabels];
+        double[] values = new double[featureIndices.length + 2 * numLabels];
         for (int m = 0; m < featureIndices.length; m++) {
             values[m] = instance.value(featureIndices[m]);
         }

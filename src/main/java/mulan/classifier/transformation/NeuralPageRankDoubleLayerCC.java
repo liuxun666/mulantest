@@ -586,13 +586,14 @@ public class NeuralPageRankDoubleLayerCC extends TransformationBasedMultiLabelLe
         for (int i = 0; i < numLabels; i++) {
             INDArray input = Nd4j.create(dataWithLayer1Output);
             INDArray output = layer_2[i].outputSingle(input);
-            int anInt = output.getInt(0);
-
+            double[] doubles = output.toDoubleVector();
+            int maxIndex = (doubles[0] > doubles[1]) ? 0 : 1;
             // Ensure correct predictions both for class values {0,1} and {1,0}
-            bipartition[i] = instance.value(featureIndices.length  + i) == anInt;
+
+            bipartition[i] = instance.value(featureIndices.length  + i) == maxIndex;
 
             // The confidence of the label being equal to 1
-            confidences[i] = instance.value(featureIndices.length  + i);
+            confidences[i] = output.getDouble(instance.value(featureIndices.length  + i) == 1 ? 0 : 1);
         }
 
         MultiLabelOutput mlo = new MultiLabelOutput(bipartition, confidences);
