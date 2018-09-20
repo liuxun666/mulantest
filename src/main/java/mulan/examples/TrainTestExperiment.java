@@ -45,8 +45,8 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\mediamill\\";
-            String filestem = "mediamill";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
+            String filestem = "emotions";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");
@@ -74,18 +74,23 @@ public class TrainTestExperiment {
             Evaluator eval = new Evaluator();
             Evaluation results;
             Evaluation results1;
+            Evaluation results2;
 
             Classifier brClassifier = new SMO();
+            AttPageRankDoubleLayerCC cc = new AttPageRankDoubleLayerCC(brClassifier, brClassifier);
             ClassifierChain br = new ClassifierChain(brClassifier);
-            PageRankDoubleLayerCC cc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
+            PageRankDoubleLayerCC pc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
             br.setDebug(true);
             cc.setDebug(true);
-            br.build(train);
             cc.build(train);
+            br.build(train);
+            pc.build(train);
+            results2 = eval.evaluate(cc, test, train);
             results = eval.evaluate(br, test, train);
-            results1 = eval.evaluate(cc, test, train);
+            results1 = eval.evaluate(pc, test, train);
             System.out.println(results);
             System.out.println(results1);
+            System.out.println(results2);
         } catch (Exception e) {
             e.printStackTrace();
         }

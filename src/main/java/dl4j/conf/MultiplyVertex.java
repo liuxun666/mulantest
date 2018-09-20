@@ -1,5 +1,6 @@
 package dl4j.conf;
 
+import org.deeplearning4j.nn.conf.graph.GraphVertex;
 import org.deeplearning4j.nn.conf.layers.samediff.SameDiffLambdaVertex;
 import org.nd4j.autodiff.samediff.SDVariable;
 import org.nd4j.autodiff.samediff.SameDiff;
@@ -20,4 +21,8 @@ public class MultiplyVertex extends SameDiffLambdaVertex {
         return ret;
     }
 
+    @Override
+    public GraphVertex clone() {
+        return new MultiplyVertex();
+    }
 }

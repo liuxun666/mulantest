@@ -2,6 +2,8 @@ import mulan.rbms.M;
 import mulan.util.A;
 import mulan.util.MutualInformation;
 import mulan.util.StatUtils;
+import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.factory.Nd4j;
 import weka.classifiers.bayes.net.search.local.K2;
 import weka.core.matrix.Matrix;
 
@@ -9,7 +11,11 @@ import java.util.Arrays;
 
 public class test {
     public static void main(String[] args) throws Exception {
-        K2 k2 = new K2();
+        double[][] m1 = {{1, 2}};
+        double[][] m2 = {{1, 2}};
+        INDArray d1 = Nd4j.create(m1);
+        INDArray d2 = Nd4j.create(m2);
+        System.out.println(A.toString(d1.mul(d2).toDoubleVector()));
 
 
     }
