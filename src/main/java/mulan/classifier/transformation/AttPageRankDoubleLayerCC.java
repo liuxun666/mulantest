@@ -15,21 +15,36 @@
  */
 package mulan.classifier.transformation;
 
+import dl4j.conf.MultiplyVertex;
 import mst.Edge;
 import mst.EdgeWeightedGraph;
 import mst.KruskalMST;
 import mulan.classifier.InvalidDataException;
 import mulan.classifier.MultiLabelOutput;
 import mulan.classifier.neural.BPMLL;
-import mulan.classifier.neural.DataPair;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.rbms.M;
 import mulan.util.A;
+import mulan.util.Attention;
 import mulan.util.StatUtils;
+import org.deeplearning4j.datasets.iterator.impl.ListDataSetIterator;
+import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
+import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
+import org.deeplearning4j.nn.conf.layers.ActivationLayer;
+import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.OutputLayer;
+import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.jgrapht.alg.interfaces.VertexScoringAlgorithm;
 import org.jgrapht.graph.DefaultEdge;
 import org.jgrapht.graph.DirectedWeightedPseudograph;
+import org.nd4j.linalg.activations.Activation;
+import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.dataset.DataSet;
+import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.learning.config.Adam;
+import org.nd4j.linalg.lossfunctions.LossFunctions;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.meta.FilteredClassifier;
@@ -37,13 +52,9 @@ import weka.classifiers.trees.J48;
 import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
-import weka.core.matrix.Matrix;
 import weka.filters.unsupervised.attribute.Remove;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -165,9 +176,9 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
     protected void buildInternal(MultiLabelInstances train) throws Exception {
 //        IntStream stream = Arrays.stream(train.getLabelIndices());
 
-        int[] list = getCCChain(train);
-        System.out.println(Arrays.toString(list));
-        for (int c: list) {
+        int[] cc = getCCChain(train);
+        System.out.println(Arrays.toString(cc));
+        for (int c: cc) {
             chain.add(c);
         }
         this.train = train;
@@ -224,37 +235,101 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
 
         //build layer_2 data
-        Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
         // data for BPMLL, input_size = train data featureindices + new feature(layer_1 output data) dim
-        double[][] netValues = new double[train.getNumInstances()][train.getDataSet().numAttributes()];
+        double[][] dataWithLayer1Output = new double[train.getNumInstances()][train.getDataSet().numAttributes() + numLabels];
         for (int i = 0; i < train.getNumInstances(); i++) {
-            double[] values = new double[layer_2_data.numAttributes()];
+//            double[] values = new double[train.getDataSet().numAttributes() + numLabels];
             for (int m = 0; m < featureIndices.length; m++) {
-                values[m] = train.getDataSet().instance(i).value(featureIndices[m]);
+                dataWithLayer1Output[i][m] = train.getDataSet().instance(i).value(featureIndices[m]);
             }
             for (int j = 0; j < numLabels; j++) {
-                values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
+                dataWithLayer1Output[i][labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
             }
-            System.arraycopy(layer_1Predict[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+            System.arraycopy(layer_1Predict[i], 0, dataWithLayer1Output[i], train.getDataSet().numAttributes() - numLabels, numLabels);
             //将原标签向后移
             for (int j = 0; j < numLabels; j++) {
-                values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
+                dataWithLayer1Output[i][labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
             }
-            Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
-            metaInstance.setDataset(layer_2_data);
-
-            layer_2_data.add(metaInstance);
+//            Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
+//            metaInstance.setDataset(layer_2_data);
+//            layer_2_data.add(metaInstance);
         }
 
 
-        List<List<DataPair>> dp = new ArrayList<>();
-        for (int i = 0; i < netValues.length; i++) {
-            double[] features = Arrays.copyOfRange(netValues[i], 0 , featureIndices.length + numLabels);
+
+        // dl4j
+        int seed = 42;
+        double lr = 0.001;
+        int dl4jInputLength = featureIndices.length + numLabels;
+        ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
+                .seed(seed)
+//                .weightInit(WeightInit.RELU)
+//                .activation(Activation.LEAKYRELU)
+                .updater(new Adam(lr))
+                .graphBuilder()
+                .addInputs("input")
+                .addLayer("dense1", new DenseLayer.Builder()
+                        .nIn(dl4jInputLength)
+                        .nOut(dl4jInputLength)
+                        .activation(Activation.TANH)
+                        .build(), "input")
+                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
+                .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
+                .addLayer("output", new OutputLayer.Builder()
+                        .lossFunction(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
+                        .nIn(dl4jInputLength)
+                        .nOut(1)
+                        .activation(Activation.SOFTMAX)
+                        .build(), "multiply")
+                .setOutputs("output")
+                .build();
+        ComputationGraph net = new ComputationGraph(config);
+        net.init();
+        System.out.println("Number of parameters by layer:");
+        for(Layer l : net.getLayers() ){
+            System.out.println("\t" + l.conf().getLayer().getLayerName() + "\t" + l.numParams());
+        }
+
+
+        List<ListDataSetIterator<DataSet>> dp = new ArrayList<>();
+        List<List<DataSet>> list = new ArrayList<>();
+        for (int i = 0; i < numLabels; i++) {
+            list.add(new ArrayList<DataSet>());
+        }
+        for (int i = 0; i < dataWithLayer1Output.length; i++) {
+            double[] features = Arrays.copyOfRange(dataWithLayer1Output[i], 0 , dl4jInputLength);
             for (int j = 0; j < numLabels; j++) {
-                DataPair d = new DataPair(features, new double[]{netValues[i][featureIndices.length + numLabels + j]});
-                dp.get(j).add(d);
+                double[] label = new double[]{dataWithLayer1Output[i][dl4jInputLength + j]};
+                DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(label));
+                list.get(j).add(d);
             }
         }
+
+        for (int i = 0; i < numLabels; i++) {
+            dp.add(new ListDataSetIterator<DataSet>(list.get(i)));
+        }
+        // fit dl4j for each label, and get attentions
+        HashMap<Integer, Attention> attentions = new HashMap<>();
+        for (int i = 0; i < numLabels; i++) {
+            net.fit(dp.get(i), 200);
+            Map<String, INDArray> paramTable = net.getLayer("dense1").paramTable();
+            INDArray w = paramTable.get("W");
+            INDArray b = paramTable.get("b");
+            attentions.put(i, new Attention(w, b));
+        }
+
+        Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
+        for (int i = 0; i < dataWithLayer1Output.length; i++) {
+            INDArray x = Nd4j.create(dataWithLayer1Output[i]);
+
+            INDArray wxplusb = x.mul(attentions.get(i).W).add(attentions.get(i).b);
+            double[] att = softmax(wxplusb.toDoubleVector());
+            double[] data = M.multiply(dataWithLayer1Output[i], att);
+
+
+        }
+
+
         bp = new BPMLL(42);
         bp.setDebug(true);
         bp.setTrainingEpochs(200);
@@ -265,27 +340,23 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         // 4. do permute
         // 5. do multiply
         //TODO change to dl4j
-        for (int i = 0; i < numLabels; i++) {
-            BPMLL copy = (BPMLL) (bp.makeCopy());
-            copy.build(dp.get(i), featureIndices.length + numLabels, null, null, null);
-            for (int j = 0; j < dp.get(i).size(); j++) {
-                MultiLabelOutput predict = copy.predict(dp.get(i).get(j));
-                double[] softmax = softmax(predict.getConfidences());
-                double[] output = M.multiply(dp.get(i).get(j).getInput(), softmax);
-
-            }
-        }
+//        for (int i = 0; i < numLabels; i++) {
+//            BPMLL copy = (BPMLL) (bp.makeCopy());
+//            copy.build(dp.get(i), featureIndices.length + numLabels, null, null, null);
+//            for (int j = 0; j < dp.get(i).size(); j++) {
+//                MultiLabelOutput predict = copy.predict(dp.get(i).get(j));
+//                double[] softmax = softmax(predict.getConfidences());
+//                double[] output = M.multiply(dp.get(i).get(j).getInput(), softmax);
+//
+//            }
+//        }
 
 //        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
         //建立第二层数据
+
         double[][] layer_2_addData = new double[layer_1Predict.length][];
-        for (int i = 0; i < layer_1Predict.length; i++) {
-            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
-            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-        }
 
         for (int ii = 0; ii < numLabels; ii++) {
-
             int index = chain.indexOf(ii);
 
             layer_2[index] = new FilteredClassifier();

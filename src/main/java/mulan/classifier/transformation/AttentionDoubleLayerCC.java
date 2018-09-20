@@ -25,7 +25,6 @@ import mulan.classifier.neural.DataPair;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.util.A;
-import mulan.util.PageRank;
 import mulan.util.StatUtils;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
@@ -36,8 +35,10 @@ import weka.core.Instance;
 import weka.core.Instances;
 import weka.filters.unsupervised.attribute.Remove;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
 /**
  * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
@@ -207,7 +208,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         }
 
 
-        /*//STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
+        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
         List<DataPair> dp = new ArrayList<>();
         for (int i = 0; i < layer_1Predict.length; i++) {
             DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
@@ -224,7 +225,7 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
         for (int i = 0; i < layer_1Predict.length; i++) {
             //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
             layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-        }*/
+        }
 
         double[][] ud = StatUtils.margDepMatrix(trainDataset);
 
@@ -280,6 +281,8 @@ public class AttentionDoubleLayerCC extends TransformationBasedMultiLabelLearner
 
             layer_2_data.add(metaInstance);
         }
+
+
 
         for (int ii = 0; ii < numLabels; ii++) {
             layer_2[ii] = new FilteredClassifier();
