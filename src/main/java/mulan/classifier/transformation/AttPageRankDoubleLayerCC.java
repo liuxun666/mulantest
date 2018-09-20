@@ -340,7 +340,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
                 double[] fulldata = dataWithLayer1Output[i];
 
                 double[] featureData = Arrays.copyOfRange(fulldata, 0 , dl4jInputLength);
-                featureData = attentionData(featureData, i);
+                featureData = attentionData(featureData, ii);
 
                 System.arraycopy(featureData, 0, fulldata,0, featureData.length);
                 Instance ist = DataUtils.createInstance(train.getDataSet().instance(i), 1, fulldata);
@@ -647,7 +647,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
 //            暂时不更新
             double[] oldData = Arrays.copyOfRange(values, 0 , featureIndices.length + numLabels);
-            oldData[labelIndices[index] + numLabels] = maxIndex;
+            oldData[labelIndices[index]] = maxIndex;
             double[] attentionData = attentionData(oldData, index);
             for (int j = 0; j < attentionData.length; j++) {
                 metaInstance.setValue(j, attentionData[j]);
