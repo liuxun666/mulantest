@@ -15,17 +15,15 @@
  */
 package mulan.examples;
 
-import mulan.classifier.transformation.*;
-import mulan.data.DataUtils;
+import mulan.classifier.transformation.AttPageRankDoubleLayerCC;
+import mulan.classifier.transformation.ClassifierChain;
+import mulan.classifier.transformation.PageRankDoubleLayerCC;
 import mulan.data.MultiLabelInstances;
 import mulan.evaluation.Evaluation;
 import mulan.evaluation.Evaluator;
 import weka.classifiers.Classifier;
-import weka.classifiers.bayes.BayesNet;
-import weka.classifiers.bayes.NaiveBayes;
 import weka.classifiers.functions.SMO;
 import weka.core.Instances;
-import weka.core.Utils;
 import weka.filters.Filter;
 import weka.filters.unsupervised.instance.RemovePercentage;
 
@@ -45,7 +43,8 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
+//            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
+            String path = "data\\";
             String filestem = "emotions";
             String percentage = "80";
 //

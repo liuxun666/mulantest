@@ -21,7 +21,7 @@ import mst.EdgeWeightedGraph;
 import mst.KruskalMST;
 import mulan.classifier.InvalidDataException;
 import mulan.classifier.MultiLabelOutput;
-import mulan.data.DataUtils;
+import mulan.classifier.neural.NormalizationFilter;
 import mulan.data.MultiLabelInstances;
 import mulan.rbms.M;
 import mulan.util.A;
@@ -38,7 +38,6 @@ import org.deeplearning4j.earlystopping.trainer.EarlyStoppingGraphTrainer;
 import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.layers.ActivationLayer;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
 import org.deeplearning4j.nn.conf.layers.DropoutLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
@@ -197,7 +196,10 @@ public class NeuralPageRankDoubleLayerCC extends TransformationBasedMultiLabelLe
         Instances trainDataset;
         numLabels = train.getNumLabels();
         trainDataset = train.getDataSet();
-
+        NormalizationFilter normalizationFilter = new NormalizationFilter(train, true, -1.0, 1.0);
+        for (int i = 0; i < trainDataset.numInstances(); i++) {
+            normalizationFilter.normalize(trainDataset.get(i));
+        }
 
         //STEP1: 单独训练多个单分类器。
         //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
@@ -392,16 +394,15 @@ public class NeuralPageRankDoubleLayerCC extends TransformationBasedMultiLabelLe
                 .addLayer("dense1", new DenseLayer.Builder()
                         .nIn(dl4jInputLength)
                         .nOut(dl4jInputLength)
-                        .activation(Activation.TANH)
+                        .activation(Activation.SOFTMAX)
                         .build(), "input")
-                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
-                .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
+                .addVertex("multiply", new MultiplyVertex(), "input", "dense1")
                 .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
                         .lossFunction(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
                         .nIn(dl4jInputLength)
                         .nOut(1)
-                        .activation(Activation.SOFTMAX)
+                        .activation(Activation.SIGMOID)
                         .build(), "drop")
                 .setOutputs("output")
                 .build();

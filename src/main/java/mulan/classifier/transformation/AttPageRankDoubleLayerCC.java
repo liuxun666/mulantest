@@ -15,13 +15,14 @@
  */
 package mulan.classifier.transformation;
 
+import dl4j.conf.CopyVertex;
 import dl4j.conf.MultiplyVertex;
 import mst.Edge;
 import mst.EdgeWeightedGraph;
 import mst.KruskalMST;
 import mulan.classifier.InvalidDataException;
 import mulan.classifier.MultiLabelOutput;
-import mulan.classifier.neural.BPMLL;
+import mulan.classifier.neural.NormalizationFilter;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
 import mulan.rbms.M;
@@ -29,23 +30,8 @@ import mulan.util.A;
 import mulan.util.Attention;
 import mulan.util.StatUtils;
 import org.deeplearning4j.datasets.iterator.impl.ListDataSetIterator;
-import org.deeplearning4j.earlystopping.EarlyStoppingConfiguration;
-import org.deeplearning4j.earlystopping.EarlyStoppingResult;
-import org.deeplearning4j.earlystopping.saver.InMemoryModelSaver;
-import org.deeplearning4j.earlystopping.saver.LocalFileGraphSaver;
-import org.deeplearning4j.earlystopping.saver.LocalFileModelSaver;
-import org.deeplearning4j.earlystopping.scorecalc.DataSetLossCalculator;
-import org.deeplearning4j.earlystopping.scorecalc.DataSetLossCalculatorCG;
-import org.deeplearning4j.earlystopping.termination.MaxEpochsTerminationCondition;
-import org.deeplearning4j.earlystopping.termination.MaxTimeIterationTerminationCondition;
-import org.deeplearning4j.earlystopping.termination.ScoreImprovementEpochTerminationCondition;
-import org.deeplearning4j.earlystopping.trainer.EarlyStoppingGraphTrainer;
-import org.deeplearning4j.earlystopping.trainer.EarlyStoppingTrainer;
-import org.deeplearning4j.eval.Evaluation;
-import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.layers.ActivationLayer;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
 import org.deeplearning4j.nn.conf.layers.DropoutLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
@@ -59,7 +45,7 @@ import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
-import org.nd4j.linalg.learning.config.Adam;
+import org.nd4j.linalg.learning.config.Sgd;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.nd4j.linalg.ops.transforms.Transforms;
 import weka.classifiers.AbstractClassifier;
@@ -72,7 +58,6 @@ import weka.core.Instances;
 import weka.filters.unsupervised.attribute.Remove;
 
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -98,6 +83,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
     protected FilteredClassifier[] layer_1;
     //第二层的链序
     protected FilteredClassifier[] layer_2;
+    protected NormalizationFilter normalizationFilter;
 
     /**
      * Random number generator
@@ -118,6 +104,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
      * when useSamplingWithReplacement is true
      */
     protected int BagSizePercent = 100;
+    private int featureLength;
 
     /**
      * Returns the size of each bag sample, as a percentage of the training size
@@ -165,7 +152,6 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
     private ArrayList<Integer> chain = new ArrayList<>();
     private Classifier layer2Clssifier;
 
-
     private ArrayList<Attribute> layer_2_Attr;
     HashMap<Integer, Attention> attentions = new HashMap<>();
 
@@ -186,12 +172,13 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
+        Nd4j.ENFORCE_NUMERICAL_STABILITY = true;
+
     }
 
     @Override
     protected void buildInternal(MultiLabelInstances train) throws Exception {
 //        IntStream stream = Arrays.stream(train.getLabelIndices());
-
         int[] cc = getCCChain(train);
         System.out.println(Arrays.toString(cc));
         for (int c: cc) {
@@ -199,13 +186,16 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         }
         this.train = train;
         layer_2_Attr = layer_2_Attr();
-        numOfModels = train.getNumLabels();
-        layer_1 = new FilteredClassifier[numOfModels];
-        layer_2 = new FilteredClassifier[numOfModels];
+        numLabels = train.getNumLabels();
+        numOfModels = numLabels;
+        featureLength = featureIndices.length;
+        layer_1 = new FilteredClassifier[numLabels];
+        layer_2 = new FilteredClassifier[numLabels];
 
         Instances trainDataset;
-        numLabels = train.getNumLabels();
         trainDataset = train.getDataSet();
+        MultiLabelInstances normalizaTrain = train.clone();
+        normalizationFilter = new NormalizationFilter(normalizaTrain, true, -1.0, 1.0);
 
 
         //STEP1: 单独训练多个单分类器。
@@ -251,31 +241,35 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
 
         //build layer_2 data
-        // data for BPMLL, input_size = train data featureindices + new feature(layer_1 output data) dim
-        double[][] dataWithLayer1Output = new double[train.getNumInstances()][train.getDataSet().numAttributes() + numLabels];
+        // data for BPMLL, input_size = train data numAttributes + new feature(layer_1 output data) dim
+        double[][] dataWithLayer1Output = new double[train.getNumInstances()][trainDataset.numAttributes() + numLabels];
+        double[][] dataForNeural = new double[train.getNumInstances()][trainDataset.numAttributes() + numLabels];
         for (int i = 0; i < train.getNumInstances(); i++) {
 //            double[] values = new double[train.getDataSet().numAttributes() + numLabels];
-            for (int m = 0; m < featureIndices.length; m++) {
-                dataWithLayer1Output[i][m] = train.getDataSet().instance(i).value(featureIndices[m]);
+            System.arraycopy(normalizaTrain.getDataSet().get(i).toDoubleArray(), 0, dataForNeural[i], 0, featureLength);
+            System.arraycopy(layer_1Predict[i], 0, dataForNeural[i], featureLength, numLabels);
+            for (int m = 0; m < featureLength; m++) {
+                dataWithLayer1Output[i][m] = trainDataset.instance(i).value(featureIndices[m]);
             }
             //将原标签向后移
             for (int j = 0; j < numLabels; j++) {
-                dataWithLayer1Output[i][labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
+                dataWithLayer1Output[i][labelIndices[j] + numLabels] = trainDataset.instance(i).value(labelIndices[j]);
+                dataForNeural[i][labelIndices[j] + numLabels] = trainDataset.instance(i).value(labelIndices[j]);
             }
-            System.arraycopy(layer_1Predict[i], 0, dataWithLayer1Output[i], train.getDataSet().numAttributes(), numLabels);
+            System.arraycopy(layer_1Predict[i], 0, dataWithLayer1Output[i], featureLength, numLabels);
 
         }
 
 
 
         // dl4j
-        int dl4jInputLength = featureIndices.length + numLabels;
+        int layer2FeatureLength = featureLength + numLabels;
 
 
         List<ComputationGraph> netList = new ArrayList<>();
         for (int i = 0; i < numLabels; i++) {
-            ComputationGraph net = getComputationGraph(dl4jInputLength);
-            net.addListeners(new ScoreIterationListener(1));
+            ComputationGraph net = getComputationGraph(layer2FeatureLength);
+            net.addListeners(new ScoreIterationListener(1000));
             net.init();
             netList.add(net);
         }
@@ -286,18 +280,18 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         for (int i = 0; i < numLabels; i++) {
             list.add(new ArrayList<DataSet>());
         }
-        for (int i = 0; i < dataWithLayer1Output.length; i++) {
-            double[] features = Arrays.copyOfRange(dataWithLayer1Output[i], 0 , dl4jInputLength);
+        for (int i = 0; i < dataForNeural.length; i++) {
+            double[] features = Arrays.copyOfRange(dataForNeural[i], 0 , layer2FeatureLength);
             for (int j = 0; j < numLabels; j++) {
-                double[] label = new double[]{dataWithLayer1Output[i][dl4jInputLength + j]};
+                double[] label = new double[]{dataForNeural[i][layer2FeatureLength + j]};
                 DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(label));
-                list.get(j).add(d);
+                list.get(j).add(d.copy());
             }
         }
 
 
         for (int i = 0; i < numLabels; i++) {
-            dp.add(new ListDataSetIterator<DataSet>(list.get(i)));
+            dp.add(new ListDataSetIterator<DataSet>(list.get(i), 32));
         }
 
         // fit dl4j for each label, and get attentions
@@ -339,11 +333,11 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
             for (int i = 0; i < dataWithLayer1Output.length; i++) {
                 double[] fulldata = dataWithLayer1Output[i];
 
-                double[] featureData = Arrays.copyOfRange(fulldata, 0 , dl4jInputLength);
+                double[] featureData = Arrays.copyOfRange(fulldata, 0 , layer2FeatureLength);
                 featureData = attentionData(featureData, index);
 
                 System.arraycopy(featureData, 0, fulldata,0, featureData.length);
-                Instance ist = DataUtils.createInstance(train.getDataSet().instance(i), 1, fulldata);
+                Instance ist = DataUtils.createInstance(trainDataset.firstInstance(), 1, fulldata);
                 ist.setDataset(layer_2_data);
                 layer_2_data.add(ist);
 
@@ -370,21 +364,15 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
             remove.setInvertSelection(false);
             layer_2[index].setFilter(remove);
             //设置当前分类器对应的标签列作为标签列
-            layer_2_data.setClassIndex(dl4jInputLength + index);
+            layer_2_data.setClassIndex(layer2FeatureLength + index);
             debug("Bulding layer_2 model " + (index + 1) + "/" + numLabels);
             layer_2[index].buildClassifier(layer_2_data);
             //更新数据
             for (int i = 0; i < dataWithLayer1Output.length; i++) {
                 double[] doubles = layer_2[index].distributionForInstance(layer_2_data.instance(i));
                 int predict = (doubles[0] > doubles[1]) ? 0 : 1;
+                dataWithLayer1Output[i][featureLength + index] = (double)predict;
 
-                dataWithLayer1Output[i][featureIndices.length + index] = (double)predict;
-
-                double[] featureData = Arrays.copyOfRange(dataWithLayer1Output[i], 0 , dl4jInputLength);
-                featureData = attentionData(featureData, index);
-                for (int j = 0; j < featureData.length; j++) {
-                    layer_2_data.instance(i).setValue(j, featureData[j]);
-                }
             }
         }
 
@@ -398,22 +386,25 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
                 .seed(seed)
 //                .weightInit(WeightInit.RELU)
 //                .activation(Activation.LEAKYRELU)
-                .updater(new Adam(lr))
+                .updater(new Sgd(lr))
+                .l1(0.1)
                 .graphBuilder()
                 .addInputs("input")
+//                .addVertex("reshape1", new ReshapeVertex(dl4jInputLength, 1), "input")
                 .addLayer("dense1", new DenseLayer.Builder()
                         .nIn(dl4jInputLength)
                         .nOut(dl4jInputLength)
-                        .activation(Activation.TANH)
+                        .activation(Activation.SOFTMAX)
                         .build(), "input")
-                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
-                .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
+                .addVertex("copy", new CopyVertex(), "input")
+//                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
+                .addVertex("multiply", new MultiplyVertex(), "copy", "dense1")
                 .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
-                        .lossFunction(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
+                        .lossFunction(LossFunctions.LossFunction.MCXENT)
                         .nIn(dl4jInputLength)
                         .nOut(1)
-                        .activation(Activation.SOFTMAX)
+                        .activation(Activation.SIGMOID)
                         .build(), "drop")
                 .setOutputs("output")
 
@@ -457,10 +448,8 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
     }
 
     private double[] attentionData(double[] featureData, int labelIndex) throws Exception {
-
         INDArray x = Nd4j.create(featureData);
-
-        INDArray wxplusb = Transforms.tanh(x.mmuli(attentions.get(labelIndex).W).addiRowVector(attentions.get(labelIndex).b));
+        INDArray wxplusb = x.mmul(attentions.get(labelIndex).W).addiRowVector(attentions.get(labelIndex).b);
         INDArray attNd = Transforms.softmax(wxplusb);
         double[] data = x.mul(attNd).toDoubleVector();
         return data;
@@ -561,17 +550,18 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         ArrayList<Attribute> attributes = new ArrayList<Attribute>();
 
 
-        for (int j = 0; j < featureIndices.length; j++) {
+        for (int j = 0; j < train.getFeatureIndices().length; j++) {
             attributes.add(train.getDataSet().attribute(featureIndices[j]));
+        }
+
+        for (int i = 0; i < numLabels; i++) {
+            attributes.add(train.getDataSet().attribute(labelIndices[i]).copy("layer1_out_" + i));
         }
         // add the labels in the last positions
         for (int j = 0; j < numLabels; j++) {
             attributes.add(train.getDataSet().attribute(labelIndices[j]));
         }
 
-        for (int i = 0; i < numLabels; i++) {
-            attributes.add(train.getDataSet().attribute(labelIndices[i]).copy("layer1_out_" + i));
-        }
         return attributes;
     }
 
@@ -593,14 +583,18 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
         }
 
+//        Instance normalizaIns = DataUtils.createInstance(train.getDataSet().instance(0), 1, instance.toDoubleArray());
+//        normalizationFilter.normalize(normalizaIns);
+//        double[] normalizaDouble = new double[featureLength + numLabels];
+//        System.arraycopy(normalizaIns.toDoubleArray(), 0, normalizaDouble,0, featureLength);
+//        System.arraycopy(layer_1_out, 0, normalizaDouble, featureLength, numLabels);
+
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, 1);
-        double[] values = new double[featureIndices.length + 2 * numLabels];
-        for (int m = 0; m < featureIndices.length; m++) {
+        double[] values = new double[featureLength + 2 * numLabels];
+        for (int m = 0; m < featureLength; m++) {
             values[m] = instance.value(featureIndices[m]);
         }
-        System.arraycopy(layer_1_out, 0, values, featureIndices.length, numLabels);
-
-
+        System.arraycopy(layer_1_out, 0, values, featureLength, numLabels);
 
         //将原标签向后移
         for (int j = 0; j < numLabels; j++) {
@@ -611,7 +605,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         for (int i = 0; i < numOfModels; i++) {
 
             int index = chain.indexOf(i);
-            double[] featureData = Arrays.copyOfRange(values, 0 , featureIndices.length + numLabels);
+            double[] featureData = Arrays.copyOfRange(values, 0 , featureLength + numLabels);
 //            System.out.println("before Attention: " + A.toString(featureData));
             featureData = attentionData(featureData, index);
 //            System.out.println("after Attention: " + A.toString(featureData));
@@ -621,7 +615,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
                 metaInstance.setValue(j, featureData[j]);
             }
 
-            layer_2_data.setClassIndex(featureIndices.length + numLabels + index);
+            layer_2_data.setClassIndex(featureLength + numLabels + index);
 
             metaInstance.setClassValue(instance.value(labelIndices[index]));
 
@@ -630,28 +624,14 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
             double[] doubles = layer_2[index].distributionForInstance(metaInstance);
 
             int maxIndex = (doubles[0] > doubles[1]) ? 0 : 1;
-//            if(i > 0){
-//                System.out.println("当前数据：" + metaInstance.classValue());
-//                System.out.println("前一个模型数据: " + metaInstance.value(labelIndices[chain.indexOf(i - 1)]));
-//            }
-            //更新数据
-//            metaInstance.setValue(metaInstance.classIndex() - numLabels, maxIndex);
-
-
             // Ensure correct predictions both for class values {0,1} and {1,0}
             Attribute classAttribute = layer_2[index].getFilter().getOutputFormat().classAttribute();
             bipartition[index] = classAttribute.value(maxIndex).equals("1");
-
             // The confidence of the label being equal to 1
             confidences[index] = doubles[classAttribute.indexOfValue("1")];
+            // 更新数据
+            values[labelIndices[index]] = maxIndex;
 
-//            暂时不更新
-            double[] oldData = Arrays.copyOfRange(values, 0 , featureIndices.length + numLabels);
-            oldData[labelIndices[index]] = maxIndex;
-            double[] attentionData = attentionData(oldData, index);
-            for (int j = 0; j < attentionData.length; j++) {
-                metaInstance.setValue(j, attentionData[j]);
-            }
         }
 
         MultiLabelOutput mlo = new MultiLabelOutput(bipartition, confidences);
