@@ -20,7 +20,6 @@ import dl4j.conf.MultiplyVertex;
 import mst.Edge;
 import mst.EdgeWeightedGraph;
 import mst.KruskalMST;
-import mulan.classifier.InvalidDataException;
 import mulan.classifier.MultiLabelOutput;
 import mulan.classifier.neural.NormalizationFilter;
 import mulan.data.DataUtils;
@@ -29,14 +28,18 @@ import mulan.rbms.M;
 import mulan.util.A;
 import mulan.util.Attention;
 import mulan.util.StatUtils;
+import org.deeplearning4j.api.storage.StatsStorage;
 import org.deeplearning4j.datasets.iterator.impl.ListDataSetIterator;
+import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
-import org.deeplearning4j.nn.conf.layers.DropoutLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
+import org.deeplearning4j.ui.api.UIServer;
+import org.deeplearning4j.ui.stats.StatsListener;
+import org.deeplearning4j.ui.storage.InMemoryStatsStorage;
 import org.jetbrains.annotations.NotNull;
 import org.jgrapht.alg.interfaces.VertexScoringAlgorithm;
 import org.jgrapht.graph.DefaultEdge;
@@ -45,8 +48,7 @@ import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
-import org.nd4j.linalg.learning.config.Sgd;
-import org.nd4j.linalg.lossfunctions.LossFunctions;
+import org.nd4j.linalg.lossfunctions.impl.LossNegativeLogLikelihood;
 import org.nd4j.linalg.ops.transforms.Transforms;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
@@ -59,6 +61,8 @@ import weka.filters.unsupervised.attribute.Remove;
 
 import java.util.*;
 import java.util.stream.Stream;
+
+import static org.deeplearning4j.nn.conf.Updater.RMSPROP;
 
 /**
  * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
@@ -195,7 +199,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         Instances trainDataset;
         trainDataset = train.getDataSet();
         MultiLabelInstances normalizaTrain = train.clone();
-        normalizationFilter = new NormalizationFilter(normalizaTrain, true, -1.0, 1.0);
+//        normalizationFilter = new NormalizationFilter(normalizaTrain, true, 0.0, 1.0);
 
 
         //STEP1: 单独训练多个单分类器。
@@ -244,6 +248,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         // data for BPMLL, input_size = train data numAttributes + new feature(layer_1 output data) dim
         double[][] dataWithLayer1Output = new double[train.getNumInstances()][trainDataset.numAttributes() + numLabels];
         double[][] dataForNeural = new double[train.getNumInstances()][trainDataset.numAttributes() + numLabels];
+        double[][] class_weight = new double[numLabels][2];
         for (int i = 0; i < train.getNumInstances(); i++) {
 //            double[] values = new double[train.getDataSet().numAttributes() + numLabels];
             System.arraycopy(normalizaTrain.getDataSet().get(i).toDoubleArray(), 0, dataForNeural[i], 0, featureLength);
@@ -253,24 +258,44 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
             }
             //将原标签向后移
             for (int j = 0; j < numLabels; j++) {
-                dataWithLayer1Output[i][labelIndices[j] + numLabels] = trainDataset.instance(i).value(labelIndices[j]);
-                dataForNeural[i][labelIndices[j] + numLabels] = trainDataset.instance(i).value(labelIndices[j]);
+                double labelValue = trainDataset.get(i).value(labelIndices[j]);
+                dataWithLayer1Output[i][labelIndices[j] + numLabels] = labelValue;
+                dataForNeural[i][labelIndices[j] + numLabels] = labelValue;
+                if (labelValue > 0) {
+                    class_weight[j][1] += 1;
+                }else{
+                    class_weight[j][0] += 1;
+                }
             }
             System.arraycopy(layer_1Predict[i], 0, dataWithLayer1Output[i], featureLength, numLabels);
 
         }
+        for (int i = 0; i < class_weight.length; i++) {
+            double max = class_weight[i][0] > class_weight[i][1] ? class_weight[i][0] : class_weight[i][1];
 
+            class_weight[i][0] = max / class_weight[i][0];
+            class_weight[i][1] = max / class_weight[i][1];
+        }
+        System.out.println(M.toString(class_weight));
+
+        //class weight for dl4j
 
 
         // dl4j
         int layer2FeatureLength = featureLength + numLabels;
-
-
         List<ComputationGraph> netList = new ArrayList<>();
         for (int i = 0; i < numLabels; i++) {
-            ComputationGraph net = getComputationGraph(layer2FeatureLength);
-            net.addListeners(new ScoreIterationListener(1000));
+            ComputationGraph net = getComputationGraph(layer2FeatureLength, Nd4j.create(class_weight[i]));
             net.init();
+            net.addListeners(new ScoreIterationListener(1000));
+            //Initialize the user interface backend
+            UIServer uiServer = UIServer.getInstance();
+            //Configure where the network information (gradients, score vs. time etc) is to be stored. Here: store in memory.
+            StatsStorage statsStorage = new InMemoryStatsStorage();         //Alternative: new FileStatsStorage(File), for saving and loading later
+            //Then add the StatsListener to collect this information from the network, as it trains
+            net.setListeners(new StatsListener(statsStorage, 1));
+            //Attach the StatsStorage instance to the UI: this allows the contents of the StatsStorage to be visualized
+            uiServer.attach(statsStorage);
             netList.add(net);
         }
 
@@ -283,8 +308,10 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
         for (int i = 0; i < dataForNeural.length; i++) {
             double[] features = Arrays.copyOfRange(dataForNeural[i], 0 , layer2FeatureLength);
             for (int j = 0; j < numLabels; j++) {
-                double[] label = new double[]{dataForNeural[i][layer2FeatureLength + j]};
-                DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(label));
+//                double[] label = new double[]{dataForNeural[i][layer2FeatureLength + j]};
+                double label = dataForNeural[i][layer2FeatureLength + j];
+                double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
+                DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(categoryLabel));
                 list.get(j).add(d.copy());
             }
         }
@@ -298,22 +325,23 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
         for (int i = 0; i < numLabels; i++) {
 //            EarlyStoppingConfiguration<ComputationGraph> esConf = new EarlyStoppingConfiguration.Builder()
-//                    .epochTerminationConditions(new MaxEpochsTerminationCondition(200))
-//                    .epochTerminationConditions(new ScoreImprovementEpochTerminationCondition(100, 0.0001))
-//                    .scoreCalculator(new DataSetLossCalculator(testDp.get(i), true))
+//                    .epochTerminationConditions(new MaxEpochsTerminationCondition(2000))
+//                    .epochTerminationConditions(new ScoreImprovementEpochTerminationCondition(10, 0.0001))
+//                    .scoreCalculator(new DataSetLossCalculator(dp.get(i), true))
 //                    .evaluateEveryNEpochs(1)
 //                    .modelSaver(new InMemoryModelSaver())
 //                    .build();
 //            EarlyStoppingGraphTrainer trainer = new EarlyStoppingGraphTrainer(esConf, netList.get(i), dp.get(i));
             System.out.println("init attention for lable " + (i + 1));
-            netList.get(i).fit(dp.get(i), 200);
+
+            netList.get(i).fit(dp.get(i), 4000);
 //            EarlyStoppingResult<ComputationGraph> fit = trainer.fit();
 //            System.out.println("EarlyStopping at " + fit.getTotalEpochs() + " epochs");
-//            System.out.println(fit.getTerminationDetails());
 //            ComputationGraph bestModel = fit.getBestModel();
-//            Evaluation evaluate = bestModel.evaluate(testDp.get(i));
-//            System.out.println("Evaluation " + i + " : " + evaluate);
+            Evaluation evaluate = netList.get(i).evaluate(dp.get(i));
+            System.out.println("Evaluation " + i + " : " + evaluate);
             Map<String, INDArray> paramTable = netList.get(i).getLayer("dense1").paramTable();
+//            Map<String, INDArray> paramTable = bestModel.getLayer("dense1").paramTable();
 
 //            netList.get(i).fit(dp.get(i), 200);
 //            Map<String, INDArray> paramTable = net.getLayer("dense1").paramTable();
@@ -379,35 +407,33 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
     }
 
     @NotNull
-    private ComputationGraph getComputationGraph(int dl4jInputLength) {
+    private ComputationGraph getComputationGraph(int dl4jInputLength, INDArray class_weight) {
         int seed = 42;
-        double lr = 0.001;
+        double lr = 0.01;
         ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
                 .seed(seed)
 //                .weightInit(WeightInit.RELU)
 //                .activation(Activation.LEAKYRELU)
-                .updater(new Sgd(lr))
-                .l1(0.1)
+                .updater(RMSPROP)
                 .graphBuilder()
                 .addInputs("input")
 //                .addVertex("reshape1", new ReshapeVertex(dl4jInputLength, 1), "input")
+                .addVertex("copy", new CopyVertex(), "input")
                 .addLayer("dense1", new DenseLayer.Builder()
                         .nIn(dl4jInputLength)
                         .nOut(dl4jInputLength)
                         .activation(Activation.SOFTMAX)
-                        .build(), "input")
-                .addVertex("copy", new CopyVertex(), "input")
+                        .build(), "copy")
 //                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
-                .addVertex("multiply", new MultiplyVertex(), "copy", "dense1")
-                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
+                .addVertex("multiply", new MultiplyVertex(), "input", "dense1")
+//                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
-                        .lossFunction(LossFunctions.LossFunction.MCXENT)
+                        .lossFunction(new LossNegativeLogLikelihood(class_weight))
                         .nIn(dl4jInputLength)
-                        .nOut(1)
-                        .activation(Activation.SIGMOID)
-                        .build(), "drop")
+                        .nOut(2)
+                        .activation(Activation.SOFTMAX)
+                        .build(), "multiply")
                 .setOutputs("output")
-
                 .build();
         return new ComputationGraph(config);
     }
@@ -449,7 +475,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
     private double[] attentionData(double[] featureData, int labelIndex) throws Exception {
         INDArray x = Nd4j.create(featureData);
-        INDArray wxplusb = x.mmul(attentions.get(labelIndex).W).addiRowVector(attentions.get(labelIndex).b);
+        INDArray wxplusb = x.mmul(attentions.get(labelIndex).W).addRowVector(attentions.get(labelIndex).b);
         INDArray attNd = Transforms.softmax(wxplusb);
         double[] data = x.mul(attNd).toDoubleVector();
         return data;
@@ -567,8 +593,7 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
 
 
     @Override
-    protected MultiLabelOutput makePredictionInternal(Instance instance) throws Exception,
-            InvalidDataException {
+    protected MultiLabelOutput makePredictionInternal(Instance instance) throws Exception{
 
         boolean[] bipartition = new boolean[numLabels];
         double[] confidences = new double[numLabels];
