@@ -15,7 +15,8 @@
  */
 package mulan.examples;
 
-import mulan.classifier.transformation.AttPageRankDoubleLayerCC;
+import mulan.classifier.transformation.AttMiPageRankNeuralNet;
+import mulan.classifier.transformation.AttNeuralNet;
 import mulan.classifier.transformation.ClassifierChain;
 import mulan.classifier.transformation.PageRankDoubleLayerCC;
 import mulan.data.MultiLabelInstances;
@@ -74,22 +75,27 @@ public class TrainTestExperiment {
             Evaluation results;
             Evaluation results1;
             Evaluation results2;
+            Evaluation results3;
 
             Classifier brClassifier = new SMO();
-            AttPageRankDoubleLayerCC cc = new AttPageRankDoubleLayerCC(brClassifier, brClassifier);
+            AttMiPageRankNeuralNet cc = new AttMiPageRankNeuralNet(brClassifier, brClassifier);
             ClassifierChain br = new ClassifierChain(brClassifier);
             PageRankDoubleLayerCC pc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
+            AttNeuralNet an = new AttNeuralNet(brClassifier, brClassifier);
             br.setDebug(true);
             cc.setDebug(true);
             cc.build(train);
             br.build(train);
             pc.build(train);
+            an.build(train);
             results2 = eval.evaluate(cc, test, train);
             results = eval.evaluate(br, test, train);
             results1 = eval.evaluate(pc, test, train);
+            results3 = eval.evaluate(an, test, train);
             System.out.println(results);
             System.out.println(results1);
             System.out.println(results2);
+            System.out.println(results3);
         } catch (Exception e) {
             e.printStackTrace();
         }
