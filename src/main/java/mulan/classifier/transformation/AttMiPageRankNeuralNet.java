@@ -287,8 +287,8 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
         for (int i = 0; i < class_weight.length; i++) {
             double max = class_weight[i][0] > class_weight[i][1] ? class_weight[i][0] : class_weight[i][1];
 
-            class_weight[i][0] = max / class_weight[i][0];
-            class_weight[i][1] = max / class_weight[i][1];
+            class_weight[i][0] = max / (class_weight[i][0] == 0 ? max : class_weight[i][0]);
+            class_weight[i][1] = max / (class_weight[i][1] == 0 ? max : class_weight[i][1]);
         }
         System.out.println(M.toString(class_weight));
 

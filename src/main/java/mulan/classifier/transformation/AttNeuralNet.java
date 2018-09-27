@@ -222,8 +222,8 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
         for (int i = 0; i < class_weight.length; i++) {
             double max = class_weight[i][0] > class_weight[i][1] ? class_weight[i][0] : class_weight[i][1];
 
-            class_weight[i][0] = max / class_weight[i][0];
-            class_weight[i][1] = max / class_weight[i][1];
+            class_weight[i][0] = max / class_weight[i][0] == 0 ? max : class_weight[i][0];
+            class_weight[i][1] = max / class_weight[i][1] == 0 ? max : class_weight[i][1];
         }
         System.out.println(M.toString(class_weight));
 
@@ -573,7 +573,7 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
             bipartition[i] = yTrue == yPredict;
             // The confidence of the label being equal to 1
 //            confidences[index] = doubles[classAttribute.indexOfValue("1")];
-            confidences[i] = doubles[yTrue];
+            confidences[i] = doubles[1];
             // 更新数据
 
         }

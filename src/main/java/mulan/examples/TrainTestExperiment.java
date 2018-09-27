@@ -45,8 +45,8 @@ public class TrainTestExperiment {
     public static void main(String[] args) {
         try {
 //            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
-            String path = "data\\";
-            String filestem = "emotions";
+            String path = "data\\testData\\";
+            String filestem = "hierarchical-train";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");
@@ -88,10 +88,10 @@ public class TrainTestExperiment {
             br.build(train);
             pc.build(train);
             an.build(train);
+            results3 = eval.evaluate(an, test, train);
             results2 = eval.evaluate(cc, test, train);
             results = eval.evaluate(br, test, train);
             results1 = eval.evaluate(pc, test, train);
-            results3 = eval.evaluate(an, test, train);
             System.out.println(results);
             System.out.println(results1);
             System.out.println(results2);
