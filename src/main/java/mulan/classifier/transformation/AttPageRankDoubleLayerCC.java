@@ -43,6 +43,7 @@ import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.conf.layers.ActivationLayer;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.DropoutLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.ui.api.UIServer;
@@ -436,13 +437,13 @@ public class AttPageRankDoubleLayerCC extends TransformationBasedMultiLabelLearn
                         .build(), "copy")
                 .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
                 .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
-//                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
+                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
                         .lossFunction(new LossNegativeLogLikelihood(class_weight))
                         .nIn(dl4jInputLength)
                         .nOut(2)
                         .activation(Activation.SOFTMAX)
-                        .build(), "multiply")
+                        .build(), "drop")
                 .setOutputs("output")
                 .build();
         return new ComputationGraph(config);

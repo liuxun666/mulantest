@@ -44,13 +44,13 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-//            String path = "F:\\code\\mulan-master\\data\\multi-label\\emotions\\";
-            String path = "data\\testData\\";
-            String filestem = "hierarchical-train";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\birds\\";
+//            String path = "data\\testData\\";
+            String filestem = "birds";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");
-            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + ".arff", path + filestem + ".xml");
+            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + "-train.arff", path + filestem + ".xml");
 
             // split the data set into train and test
             Instances dataSet = mlDataSet.getDataSet();
@@ -75,27 +75,27 @@ public class TrainTestExperiment {
             Evaluation results;
             Evaluation results1;
             Evaluation results2;
-            Evaluation results3;
+//            Evaluation results3;
 
             Classifier brClassifier = new SMO();
             AttMiPageRankNeuralNet cc = new AttMiPageRankNeuralNet(brClassifier, brClassifier);
             ClassifierChain br = new ClassifierChain(brClassifier);
             PageRankDoubleLayerCC pc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
-            AttNeuralNet an = new AttNeuralNet(brClassifier, brClassifier);
+//            AttNeuralNet an = new AttNeuralNet(brClassifier, brClassifier);
             br.setDebug(true);
             cc.setDebug(true);
             cc.build(train);
             br.build(train);
             pc.build(train);
-            an.build(train);
-            results3 = eval.evaluate(an, test, train);
+//            an.build(train);
+//            results3 = eval.evaluate(an, test, train);
             results2 = eval.evaluate(cc, test, train);
             results = eval.evaluate(br, test, train);
             results1 = eval.evaluate(pc, test, train);
             System.out.println(results);
             System.out.println(results1);
             System.out.println(results2);
-            System.out.println(results3);
+//            System.out.println(results3);
         } catch (Exception e) {
             e.printStackTrace();
         }
