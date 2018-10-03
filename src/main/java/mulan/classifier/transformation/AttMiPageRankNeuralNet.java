@@ -315,10 +315,17 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 
 
         List<ListDataSetIterator<DataSet>> dp = new ArrayList<>();
+        List<ListDataSetIterator<DataSet>> testDi = new ArrayList<>();
+
         List<List<DataSet>> list = new ArrayList<>();
+        List<List<DataSet>> testDs = new ArrayList<>();
+
         for (int i = 0; i < numLabels; i++) {
             list.add(new ArrayList<DataSet>());
+            testDs.add(new ArrayList<DataSet>());
+
         }
+        int testIdx = (int)(dataForNeural.length * 0.9);
         for (int i = 0; i < dataForNeural.length; i++) {
             double[] features = Arrays.copyOfRange(dataForNeural[i], 0 , layer2FeatureLength);
             for (int j = 0; j < numLabels; j++) {
@@ -326,7 +333,13 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
                 double label = dataForNeural[i][layer2FeatureLength + j];
                 double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
                 DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(categoryLabel));
+
                 list.get(j).add(d.copy());
+//                if (i > testIdx){
+//                    testDs.get(j).add(d.copy());
+//                }else{
+//                    list.get(j).add(d.copy());
+//                }
             }
         }
 
@@ -339,8 +352,8 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 
         for (int i = 0; i < numLabels; i++) {
             List<EpochTerminationCondition> termimation = new ArrayList<>();
-            termimation.add(new MaxEpochsTerminationCondition(2000));
-            termimation.add(new ScoreImprovementEpochTerminationCondition(100, 0.001));
+            termimation.add(new MaxEpochsTerminationCondition(3000));
+            termimation.add(new ScoreImprovementEpochTerminationCondition(100, 0.01));
             EarlyStoppingConfiguration<ComputationGraph> esConf = new EarlyStoppingConfiguration.Builder()
                     .epochTerminationConditions(termimation)
                     .scoreCalculator(new DataSetLossCalculator(dp.get(i), true))

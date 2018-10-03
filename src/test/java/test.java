@@ -12,10 +12,10 @@ import java.util.Arrays;
 public class test {
     public static void main(String[] args) throws Exception {
         double[][] m1 = {{1, 2}};
-        double[][] m2 = {{1, 2}};
+        double[][] m2 = {{1, 2}, {1,1}};
         INDArray d1 = Nd4j.create(m1);
         INDArray d2 = Nd4j.create(m2);
-        System.out.println(A.toString(d1.mul(d2).toDoubleVector()));
+        System.out.println(d1.mmul(d2));
 
 
     }

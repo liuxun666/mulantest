@@ -44,13 +44,13 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\birds\\";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\corel5k\\";
 //            String path = "data\\testData\\";
-            String filestem = "birds";
+            String filestem = "Corel5k";
             String percentage = "80";
 //
             System.out.println("Loading the dataset");
-            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + "-train.arff", path + filestem + ".xml");
+            MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + ".arff", path + filestem + ".xml");
 
             // split the data set into train and test
             Instances dataSet = mlDataSet.getDataSet();

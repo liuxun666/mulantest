@@ -43,7 +43,9 @@ import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.conf.layers.ActivationLayer;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.LSTM;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
+import org.deeplearning4j.nn.conf.layers.recurrent.Bidirectional;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.ui.api.UIServer;
 import org.deeplearning4j.ui.stats.StatsListener;
@@ -199,8 +201,7 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
 
         Instances trainDataset;
         trainDataset = train.getDataSet();
-        MultiLabelInstances normalizaTrain = train.clone();
-        normalizationFilter = new NormalizationFilter(normalizaTrain, true, 0.0, 1.0);
+        normalizationFilter = new NormalizationFilter(train, true, 0.0, 1.0);
 
         //build layer_2 data
         // data for BPMLL, input_size = train data numAttributes + new feature(layer_1 output data) dim
@@ -208,7 +209,7 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
         double[][] class_weight = new double[numLabels][2];
         for (int i = 0; i < train.getNumInstances(); i++) {
 //            double[] values = new double[train.getDataSet().numAttributes() + numLabels];
-            System.arraycopy(normalizaTrain.getDataSet().get(i).toDoubleArray(), 0, dataForNeural[i], 0, featureLength + numLabels);
+            System.arraycopy(trainDataset.get(i).toDoubleArray(), 0, dataForNeural[i], 0, featureLength + numLabels);
             for (int j = 0; j < numLabels; j++) {
                 double labelValue = trainDataset.get(i).value(labelIndices[j]);
                 if (labelValue > 0) {
@@ -358,6 +359,7 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
     @NotNull
     private ComputationGraph getComputationGraph(int dl4jInputLength, INDArray class_weight) {
         int seed = 42;
+        int lstmSize = 256;
         ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
                 .seed(seed)
 //                .weightInit(WeightInit.RELU)
@@ -365,6 +367,16 @@ public class AttNeuralNet extends TransformationBasedMultiLabelLearner {
                 .updater(RMSPROP)
                 .graphBuilder()
                 .addInputs("input")
+                .addLayer("lstm",
+                        new Bidirectional.Builder(null, null)
+                        .mode(Bidirectional.Mode.CONCAT)
+                        .rnnLayer(new LSTM.Builder()
+                                .nIn(dl4jInputLength)
+                                .nOut(lstmSize)
+                                .activation(Activation.TANH)
+                                .build())
+                        .build(), "input")
+
                 .addVertex("copy", new CopyVertex(), "input")
                 .addLayer("dense1", new DenseLayer.Builder()
                         .nIn(dl4jInputLength)

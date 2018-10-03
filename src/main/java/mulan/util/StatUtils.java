@@ -365,7 +365,7 @@ public abstract class StatUtils {
 		return M;
 	}
 
-	public static double mi(int[][] D, int idx1, int idx2) {
+	public static double  mi(int[][] D, int idx1, int idx2) {
 		double s = 0;
         double[][] tmp = new double[2][2];
         for (int i = 0; i < tmp.length; i++) {
