@@ -15,9 +15,11 @@
  */
 package mulan.classifier.transformation;
 
+import com.google.common.collect.Lists;
 import mulan.classifier.MultiLabelOutput;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
+import mulan.util.ChainUtils;
 import mulan.util.MiUtils;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
@@ -27,6 +29,11 @@ import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
 import weka.filters.unsupervised.attribute.Remove;
+
+import java.util.Arrays;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Implementation of the Classifier Chain (CC) algorithm.</p> <p>For more
@@ -83,41 +90,51 @@ public class PageRankMiClassifierChain extends TransformationBasedMultiLabelLear
     }
 
     protected void buildInternal(MultiLabelInstances train) throws Exception {
+        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
 
-        chain = MiUtils.getCCChain(train);
+        chain = ChainUtils.getMiCCChain(train);
+        System.out.println(Arrays.toString(chain));
 
-        Instances trainDataset;
         numLabels = train.getNumLabels();
         ensemble = new FilteredClassifier[numLabels];
-        trainDataset = train.getDataSet();
 
-        //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
-        for (int idx = 0; idx < numLabels; idx++) {
-            int i = chain[idx];
-            ensemble[i] = new FilteredClassifier();
-            ensemble[i].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
+        for (int i = 0; i < numLabels; i++) {
+            int finalI = i;
+            ec.submit(() -> {
+                try {
+                    MultiLabelInstances clone = train.clone();
+                    ensemble[finalI] = new FilteredClassifier();
+                    ensemble[finalI].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
 
-            // Indices of attributes to remove first removes numLabels attributes
-            // the numLabels - 1 attributes and so on.
-            // The loop starts from the last attribute.
-            int[] indicesToRemove = new int[numLabels - 1 - i];
-            int counter2 = 0;
-            //将不是当前分类器的标签加入数组
-            for (int counter1 = 0; counter1 < numLabels - i - 1; counter1++) {
-                indicesToRemove[counter1] = labelIndices[this.chain[numLabels - 1 - counter2]];
-                counter2++;
-            }
-            //移除
-            Remove remove = new Remove();
-            remove.setAttributeIndicesArray(indicesToRemove);
-            remove.setInputFormat(trainDataset);
-            remove.setInvertSelection(false);
-            ensemble[i].setFilter(remove);
-            //设置当前分类器对应的标签列作为标签列
-            trainDataset.setClassIndex(labelIndices[this.chain[i]]);
-            debug("Bulding model " + (i + 1) + "/" + numLabels);
-            ensemble[i].buildClassifier(trainDataset);
+                    // Indices of attributes to remove first removes numLabels attributes
+                    // the numLabels - 1 attributes and so on.
+                    // The loop starts from the last attribute.
+                    int[] indicesToRemove = new int[numLabels - 1 - finalI];
+                    int counter2 = 0;
+                    for (int counter1 = 0; counter1 < numLabels - finalI - 1; counter1++) {
+                        indicesToRemove[counter1] = labelIndices[chain[numLabels - 1 - counter2]];
+                        counter2++;
+                    }
+
+                    Remove remove = new Remove();
+                    remove.setAttributeIndicesArray(indicesToRemove);
+                    remove.setInputFormat(clone.getDataSet());
+                    remove.setInvertSelection(false);
+                    ensemble[finalI].setFilter(remove);
+
+                    clone.getDataSet().setClassIndex(labelIndices[chain[finalI]]);
+                    debug("Bulding model " + (finalI + 1) + "/" + numLabels);
+                    ensemble[finalI].buildClassifier(clone.getDataSet());
+                }catch (Exception e){
+                    e.printStackTrace();
+                    System.exit(1);
+                }
+            });
+
         }
+        ec.shutdown();
+        ec.awaitTermination(1, TimeUnit.DAYS);
+        ec = null;
     }
 
     protected MultiLabelOutput makePredictionInternal(Instance instance) throws Exception {

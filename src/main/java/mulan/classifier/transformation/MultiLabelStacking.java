@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Random;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import mulan.classifier.MultiLabelOutput;
@@ -172,6 +175,7 @@ public class MultiLabelStacking extends TransformationBasedMultiLabelLearner {
         if (partialBuild) { // build base/meta level will be called separately
             return;
         }
+        train = dataSet.getDataSet();
 
         if (baseClassifier instanceof IBk) {
             buildBaseLevelKNN(dataSet);
@@ -261,7 +265,7 @@ public class MultiLabelStacking extends TransformationBasedMultiLabelLearner {
      * @throws Exception Potential exception thrown. To be handled in an upper level.
      */
     private void buildBaseLevel(MultiLabelInstances trainingSet) throws Exception {
-        train = new Instances(trainingSet.getDataSet());
+
         baseLevelData = new Instances[numLabels];
         baseLevelEnsemble = AbstractClassifier.makeCopies(baseClassifier, numLabels);
         if (normalize) {
@@ -272,65 +276,79 @@ public class MultiLabelStacking extends TransformationBasedMultiLabelLearner {
         // initialize the table holding the predictions of the first level
         // classifiers for each label for every instance of the training set
         baseLevelPredictions = new double[train.numInstances()][numLabels];
-
+        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         for (int labelIndex = 0; labelIndex < numLabels; labelIndex++) {
-            debug("Label: " + labelIndex);
-            // transform the dataset according to the BR method
-            baseLevelData[labelIndex] = BinaryRelevanceTransformation.transformInstances(train, labelIndices,
-                    labelIndices[labelIndex]);
-            // attach indexes in order to keep track of the original positions
-            baseLevelData[labelIndex] = new Instances(attachIndexes(baseLevelData[labelIndex]));
-            // prepare the transformed dataset for stratified x-fold cv
-            Random random = new Random(1);
-            baseLevelData[labelIndex].randomize(random);
-            baseLevelData[labelIndex].stratify(numFolds);
-            debug("Creating meta-data");
-            HashSet<Integer> indices = new HashSet<Integer>();
-            for (int j = 0; j < numFolds; j++) {
-                debug("Label=" + labelIndex + ", Fold=" + j);
-                Instances subtrain = baseLevelData[labelIndex].trainCV(numFolds, j);
-                Instances subtest = baseLevelData[labelIndex].testCV(numFolds, j);
-                // create a filtered meta classifier, used to ignore
-                // the index attribute in the build process
-                // perform stratified x-fold cv and get predictions
-                // for each class for every instance
-                FilteredClassifier fil = new FilteredClassifier();
-                fil.setClassifier(baseLevelEnsemble[labelIndex]);
-                Remove remove = new Remove();
-                remove.setAttributeIndices("first");
-                remove.setInputFormat(subtrain);
-                fil.setFilter(remove);
-                fil.buildClassifier(subtrain);
+            int finalLabelIndex = labelIndex;
+            ec.submit(() -> {
+                try {
+                    debug("Label: " + finalLabelIndex);
+                    // transform the dataset according to the BR method
+                    MultiLabelInstances clone = trainingSet.clone();
 
-                // Classify test instance
-                for (int i = 0; i < subtest.numInstances(); i++) {
-                    double distribution[];
-                    distribution = fil.distributionForInstance(subtest.instance(i));
-                    // Ensure correct predictions both for class values {0,1} and {1,0}
-                    Attribute classAttribute = baseLevelData[labelIndex].classAttribute();
-                    int index = (int) subtest.instance(i).value(0);
-                    if (!indices.add(index)) {
-                        System.out.println("Already predicted instance;");
-                    }
-                    baseLevelPredictions[index][labelIndex] = distribution[classAttribute.indexOfValue("1")];
-                    if (normalize) {
-                        if (distribution[classAttribute.indexOfValue("1")] > maxProb[labelIndex]) {
-                            maxProb[labelIndex] = distribution[classAttribute.indexOfValue("1")];
+                    baseLevelData[finalLabelIndex] = BinaryRelevanceTransformation.transformInstances(clone.getDataSet(), labelIndices,
+                            labelIndices[finalLabelIndex]);
+                    // attach indexes in order to keep track of the original positions
+                    baseLevelData[finalLabelIndex] = new Instances(attachIndexes(baseLevelData[finalLabelIndex]));
+                    // prepare the transformed dataset for stratified x-fold cv
+                    Random random = new Random(1);
+                    baseLevelData[finalLabelIndex].randomize(random);
+                    baseLevelData[finalLabelIndex].stratify(numFolds);
+                    debug("Creating meta-data");
+                    HashSet<Integer> indices = new HashSet<Integer>();
+                    for (int j = 0; j < numFolds; j++) {
+                        debug("Label=" + finalLabelIndex + ", Fold=" + j);
+                        Instances subtrain = baseLevelData[finalLabelIndex].trainCV(numFolds, j);
+                        Instances subtest = baseLevelData[finalLabelIndex].testCV(numFolds, j);
+                        // create a filtered meta classifier, used to ignore
+                        // the index attribute in the build process
+                        // perform stratified x-fold cv and get predictions
+                        // for each class for every instance
+                        FilteredClassifier fil = new FilteredClassifier();
+                        fil.setClassifier(baseLevelEnsemble[finalLabelIndex]);
+                        Remove remove = new Remove();
+                        remove.setAttributeIndices("first");
+                        remove.setInputFormat(subtrain);
+                        fil.setFilter(remove);
+                        fil.buildClassifier(subtrain);
+
+                        // Classify test instance
+                        for (int i = 0; i < subtest.numInstances(); i++) {
+                            double distribution[];
+                            distribution = fil.distributionForInstance(subtest.instance(i));
+                            // Ensure correct predictions both for class values {0,1} and {1,0}
+                            Attribute classAttribute = baseLevelData[finalLabelIndex].classAttribute();
+                            int index = (int) subtest.instance(i).value(0);
+                            if (!indices.add(index)) {
+                                System.out.println("Already predicted instance;");
+                            }
+                            baseLevelPredictions[index][finalLabelIndex] = distribution[classAttribute.indexOfValue("1")];
+                            if (normalize) {
+                                if (distribution[classAttribute.indexOfValue("1")] > maxProb[finalLabelIndex]) {
+                                    maxProb[finalLabelIndex] = distribution[classAttribute.indexOfValue("1")];
+                                }
+                                if (distribution[classAttribute.indexOfValue("1")] < minProb[finalLabelIndex]) {
+                                    minProb[finalLabelIndex] = distribution[classAttribute.indexOfValue("1")];
+                                }
+                            }
                         }
-                        if (distribution[classAttribute.indexOfValue("1")] < minProb[labelIndex]) {
-                            minProb[labelIndex] = distribution[classAttribute.indexOfValue("1")];
-                        }
+
                     }
+                    // now we can detach the indexes from the first level datasets
+                    baseLevelData[finalLabelIndex] = detachIndexes(baseLevelData[finalLabelIndex]);
+
+                    debug("Building base classifier on full data");
+                    // build base classifier on the full training data
+                    baseLevelEnsemble[finalLabelIndex].buildClassifier(baseLevelData[finalLabelIndex]);
+                    baseLevelData[finalLabelIndex].delete();
+                    clone = null;
+                }catch (Exception e){
+                    System.out.println("index: " + finalLabelIndex);
+                    e.printStackTrace();
                 }
-            }
-            // now we can detach the indexes from the first level datasets
-            baseLevelData[labelIndex] = detachIndexes(baseLevelData[labelIndex]);
-
-            debug("Building base classifier on full data");
-            // build base classifier on the full training data
-            baseLevelEnsemble[labelIndex].buildClassifier(baseLevelData[labelIndex]);
-            baseLevelData[labelIndex].delete();
+            });
         }
+        ec.shutdown();
+        ec.awaitTermination(1, TimeUnit.DAYS);
 
         if (normalize) {
             normalizePredictions();
@@ -345,64 +363,75 @@ public class MultiLabelStacking extends TransformationBasedMultiLabelLearner {
      */
     public void buildMetaLevel() throws Exception {
         debug("Building the ensemle of the meta level classifiers");
+        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
 
         for (int i = 0; i < numLabels; i++) { // creating meta-level data new
-            ArrayList<Attribute> attributes = new ArrayList<Attribute>();
+            int finalI = i;
+            ec.submit(() -> {
+                try{
 
-            if (includeAttrs) { // add the features in the first positions
-                for (int j = 0; j < featureIndices.length; j++) {
-                    attributes.add(train.attribute(featureIndices[j]));
-                }
-            }
-            // add the labels in the last positions
-            for (int j = 0; j < numLabels; j++) {
-                attributes.add(train.attribute(labelIndices[j]));
-            }
+                    ArrayList<Attribute> attributes = new ArrayList<Attribute>();
 
-            attributes.add(train.attribute(labelIndices[i]).copy("meta"));
-
-            metaLevelData[i] = new Instances("Meta format", attributes, 0);
-            metaLevelData[i].setClassIndex(metaLevelData[i].numAttributes() - 1);
-
-            // add the meta instances new
-            for (int l = 0; l < train.numInstances(); l++) {
-                double[] values = new double[metaLevelData[i].numAttributes()];
-                if (includeAttrs) {
-                    // Copy the original features
-                    for (int m = 0; m < featureIndices.length; m++) {
-                        values[m] = train.instance(l).value(featureIndices[m]);
+                    if (includeAttrs) { // add the features in the first positions
+                        for (int j = 0; j < featureIndices.length; j++) {
+                            attributes.add(train.attribute(featureIndices[j]));
+                        }
                     }
-                    System.arraycopy(baseLevelPredictions[l], 0, values, train.numAttributes() - numLabels, numLabels);
-                } else {
-                    System.arraycopy(baseLevelPredictions[l], 0, values, 0, numLabels);
+                    // add the labels in the last positions
+                    for (int j = 0; j < numLabels; j++) {
+                        attributes.add(train.attribute(labelIndices[j]));
+                    }
+
+                    attributes.add(train.attribute(labelIndices[finalI]).copy("meta"));
+
+                    metaLevelData[finalI] = new Instances("Meta format", attributes, 0);
+                    metaLevelData[finalI].setClassIndex(metaLevelData[finalI].numAttributes() - 1);
+
+                    // add the meta instances new
+                    for (int l = 0; l < train.numInstances(); l++) {
+                        double[] values = new double[metaLevelData[finalI].numAttributes()];
+                        if (includeAttrs) {
+                            // Copy the original features
+                            for (int m = 0; m < featureIndices.length; m++) {
+                                values[m] = train.instance(l).value(featureIndices[m]);
+                            }
+                            System.arraycopy(baseLevelPredictions[l], 0, values, train.numAttributes() - numLabels, numLabels);
+                        } else {
+                            System.arraycopy(baseLevelPredictions[l], 0, values, 0, numLabels);
+                        }
+
+                        Instance metaInstance = DataUtils.createInstance(train.instance(l), 1, values);
+                        metaInstance.setDataset(metaLevelData[finalI]);
+                        metaInstance.setClassValue(train.instance(l).value(labelIndices[finalI]));
+                        metaLevelData[finalI].add(metaInstance);
+                    }
+
+                    // We utilize a filtered classifier to prune uncorrelated labels
+                    metaLevelFilteredEnsemble[finalI] = new FilteredClassifier();
+                    metaLevelFilteredEnsemble[finalI].setClassifier(metaLevelEnsemble[finalI]);
+
+                    Remove remove = new Remove();
+
+                    if (topkCorrelated < numLabels) {
+                        remove.setAttributeIndicesArray(selectedAttributes[finalI]);
+                    } else {
+                        remove.setAttributeIndices("first-last");
+                    }
+
+                    remove.setInvertSelection(true);
+                    remove.setInputFormat(metaLevelData[finalI]);
+                    metaLevelFilteredEnsemble[finalI].setFilter(remove);
+
+                    debug("Building classifier for meta training set" + finalI);
+                    metaLevelFilteredEnsemble[finalI].buildClassifier(metaLevelData[finalI]);
+                    metaLevelData[finalI].delete();
+                }catch (Exception e){
+                    e.printStackTrace();
                 }
-
-                Instance metaInstance = DataUtils.createInstance(train.instance(l), 1, values);
-                metaInstance.setDataset(metaLevelData[i]);
-                metaInstance.setClassValue(train.instance(l).value(labelIndices[i]));
-                metaLevelData[i].add(metaInstance);
-            }
-
-            // We utilize a filtered classifier to prune uncorrelated labels
-            metaLevelFilteredEnsemble[i] = new FilteredClassifier();
-            metaLevelFilteredEnsemble[i].setClassifier(metaLevelEnsemble[i]);
-
-            Remove remove = new Remove();
-
-            if (topkCorrelated < numLabels) {
-                remove.setAttributeIndicesArray(selectedAttributes[i]);
-            } else {
-                remove.setAttributeIndices("first-last");
-            }
-
-            remove.setInvertSelection(true);
-            remove.setInputFormat(metaLevelData[i]);
-            metaLevelFilteredEnsemble[i].setFilter(remove);
-
-            debug("Building classifier for meta training set" + i);
-            metaLevelFilteredEnsemble[i].buildClassifier(metaLevelData[i]);
-            metaLevelData[i].delete();
+            });
         }
+        ec.shutdown();
+        ec.awaitTermination(1, TimeUnit.DAYS);
     }
 
     /**
@@ -412,7 +441,6 @@ public class MultiLabelStacking extends TransformationBasedMultiLabelLearner {
      * @throws Exception Potential exception thrown. To be handled in an upper level.
      */
     public void buildBaseLevelKNN(MultiLabelInstances trainingSet) throws Exception {
-        train = new Instances(trainingSet.getDataSet());
         EuclideanDistance dfunc = new EuclideanDistance();
         dfunc.setDontNormalize(false);
 
