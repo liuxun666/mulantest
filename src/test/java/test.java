@@ -1,21 +1,53 @@
-import mulan.rbms.M;
-import mulan.util.A;
-import mulan.util.MutualInformation;
-import mulan.util.StatUtils;
-import org.nd4j.linalg.api.ndarray.INDArray;
-import org.nd4j.linalg.factory.Nd4j;
-import weka.classifiers.bayes.net.search.local.K2;
+import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
+import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
+import org.deeplearning4j.nn.conf.layers.ActivationLayer;
+import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.LSTM;
+import org.deeplearning4j.nn.conf.layers.recurrent.Bidirectional;
+import org.deeplearning4j.nn.conf.layers.recurrent.LastTimeStep;
+import org.deeplearning4j.nn.graph.ComputationGraph;
+import org.nd4j.linalg.activations.Activation;
 import weka.core.matrix.Matrix;
 
 import java.util.Arrays;
 
+import static org.deeplearning4j.nn.conf.Updater.RMSPROP;
+
 public class test {
     public static void main(String[] args) throws Exception {
-        double[][] m1 = {{1, 2}};
-        double[][] m2 = {{1, 2}, {1,1}};
-        INDArray d1 = Nd4j.create(m1);
-        INDArray d2 = Nd4j.create(m2);
-        System.out.println(d1.mmul(d2));
+        int lstmSize = 256;
+        Bidirectional encode = new Bidirectional.Builder(null, null)
+                .mode(Bidirectional.Mode.CONCAT)
+                .rnnLayer(new LSTM.Builder()
+                        .nIn(lstmSize)
+                        .nOut(lstmSize)
+                        .build()
+                ).build();
+        Bidirectional decode = new Bidirectional.Builder(null, null)
+                .mode(Bidirectional.Mode.CONCAT)
+                .rnnLayer(new LSTM.Builder()
+                        .nIn(lstmSize)
+                        .nOut(lstmSize)
+                        .build()
+                ).build();
+        ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
+//                .weightInit(WeightInit.RELU)
+//                .activation(Activation.LEAKYRELU)
+                .updater(RMSPROP)
+                .graphBuilder()
+                .addInputs("input")
+                .addLayer("encode", encode, "input"
+                )
+                .addLayer("lastTime", new LastTimeStep(decode), "decode")
+                .addLayer("wh", new DenseLayer.Builder().nIn(2 * lstmSize).nOut(2*lstmSize).build(), "encode")
+                .addLayer("ws", new DenseLayer.Builder().nIn(2 * lstmSize).nOut(2*lstmSize).build(), "lastTime")
+//                .addLayer("concat", new )
+                .addLayer("e", new ActivationLayer(Activation.TANH), "wh")
+                .addLayer("decode", decode, "input"
+                )
+                .setOutputs("output")
+                .build();
+        new ComputationGraph(config);
 
 
     }

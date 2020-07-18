@@ -36,9 +36,6 @@ import weka.filters.unsupervised.attribute.Remove;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
@@ -51,7 +48,7 @@ import java.util.concurrent.TimeUnit;
  * @author Grigorios Tsoumakas
  * @version 2012.02.27
  */
-public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner {
+public class PageRankPearsonDoubleLayerCC extends TransformationBasedMultiLabelLearner {
 
     /**
      * The number of classifier chain models
@@ -136,11 +133,11 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
     private BPMLL bp;
     private Classifier layer2Clssifier;
     private ArrayList<Attribute> layer_2_Attr;
-    private int featureLength;
+
     /**
      * Default constructor
      */
-    public PageRankDoubleLayerCC() {
+    public PageRankPearsonDoubleLayerCC() {
         this(new J48(), new J48());
     }
 
@@ -149,7 +146,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
      *
      * @param classifier the base classifier for each ClassifierChain model
      */
-    public PageRankDoubleLayerCC(Classifier classifier, Classifier layer2) {
+    public PageRankPearsonDoubleLayerCC(Classifier classifier, Classifier layer2) {
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
@@ -157,8 +154,9 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
     @Override
     protected void buildInternal(MultiLabelInstances train) throws Exception {
-        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
-        int[] list = ChainUtils.getMiCCChain(train);
+//        IntStream stream = Arrays.stream(train.getLabelIndices());
+//        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+        int[] list = ChainUtils.getPearsonCCChain(train);
         System.out.println(Arrays.toString(list));
         for (int c: list) {
             chain.add(c);
@@ -168,7 +166,6 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         numOfModels = train.getNumLabels();
         layer_1 = new FilteredClassifier[numOfModels];
         layer_2 = new FilteredClassifier[numOfModels];
-        featureLength = featureIndices.length;
 
         Instances trainDataset;
         numLabels = train.getNumLabels();
@@ -177,44 +174,72 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         //STEP1: 单独训练多个单分类器。
         //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
         for (int i = 0; i < numLabels; i++) {
-            int finalI = i;
-            ec.submit(() -> {
-                try {
-                    Instances clone = train.clone().getDataSet();
-                    layer_1[finalI] = new FilteredClassifier();
-                    layer_1[finalI].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
-                    //移除
-                    int[] indicesToRemove = new int[numLabels - 1];
-                    int counter2 = 0;
-                    //将不是当前分类器的标签加入数组
-                    for (int counter1 = 0; counter1 < numLabels; counter1++) {
-                        if(counter1 != finalI){
-                            indicesToRemove[counter2] = labelIndices[counter1];
-                            counter2++;
-                        }
-                    }
+//            debug("Bulding layer_1 model " + (i + 1) + "/" + numLabels);
+//            layer_1[i].buildClassifier(trainDataset);
+            final int i1 = i;
 
-                    Remove remove = new Remove();
-                    remove.setAttributeIndicesArray(indicesToRemove);
-                    remove.setInputFormat(clone);
-                    remove.setInvertSelection(false);
-                    layer_1[finalI].setFilter(remove);
-                    //设置当前分类器对应的标签列作为标签列
-                    clone.setClassIndex(labelIndices[finalI]);
-                    layer_1[finalI].buildClassifier(clone);
-                    debug("Bulding layer_1 model " + (finalI + 1) + "/" + numLabels);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    System.exit(1);
+            Instances copyTrainDateset = train.clone().getDataSet();
+            layer_1[i1] = new FilteredClassifier();
+            layer_1[i1].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
+            //移除
+            int[] indicesToRemove = new int[numLabels - 1];
+            int counter2 = 0;
+            //将不是当前分类器的标签加入数组
+            for (int counter1 = 0; counter1 < numLabels; counter1++) {
+                if(counter1 != i1){
+                    indicesToRemove[counter2] = labelIndices[counter1];
+                    counter2++;
                 }
-            });
+            }
 
+            Remove remove = new Remove();
+            remove.setAttributeIndicesArray(indicesToRemove);
+            remove.setInputFormat(copyTrainDateset);
+            remove.setInvertSelection(false);
+            layer_1[i1].setFilter(remove);
+            //设置当前分类器对应的标签列作为标签列
+            copyTrainDateset.setClassIndex(labelIndices[i1]);
+            layer_1[i1].buildClassifier(copyTrainDateset);
+            debug("Bulding layer_1 model " + (i1 + 1) + "/" + numLabels);
+//            ec.submit(new Runnable() {
+//                @Override
+//                public void run() {
+//                    try {
+//                        Instances copyTrainDateset = train.clone().getDataSet();
+//                        layer_1[i1] = new FilteredClassifier();
+//                        layer_1[i1].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
+//                        //移除
+//                        int[] indicesToRemove = new int[numLabels - 1];
+//                        int counter2 = 0;
+//                        //将不是当前分类器的标签加入数组
+//                        for (int counter1 = 0; counter1 < numLabels; counter1++) {
+//                            if(counter1 != i1){
+//                                indicesToRemove[counter2] = labelIndices[counter1];
+//                                counter2++;
+//                            }
+//                        }
+//
+//                        Remove remove = new Remove();
+//                        remove.setAttributeIndicesArray(indicesToRemove);
+//                        remove.setInputFormat(copyTrainDateset);
+//                        remove.setInvertSelection(false);
+//                        layer_1[i1].setFilter(remove);
+//                        //设置当前分类器对应的标签列作为标签列
+//                        copyTrainDateset.setClassIndex(labelIndices[i1]);
+//                        layer_1[i1].buildClassifier(copyTrainDateset);
+//                        debug("Bulding layer_1 model " + (i1 + 1) + "/" + numLabels);
+//                        copyTrainDateset = null;
+//                    } catch (Exception e) {
+//                        e.printStackTrace();
+//                    }
+//                }
+//            });
 
         }
-        ec.shutdown();
-        ec.awaitTermination(1, TimeUnit.DAYS);
-        ec = null;
-
+//        ec.shutdown();
+//        ec.awaitTermination(1, TimeUnit.DAYS);
+//        ec = null;
+        //layer_1 done
         //STEP2: 将多个单分类器分别输出对样本的预测
         double[][] layer_1Predict = new double[trainDataset.numInstances()][numLabels];
         for (int ii = 0; ii < trainDataset.numInstances(); ii++){
@@ -251,18 +276,18 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
         for (int i = 0; i < train.getNumInstances(); i++) {
             double[] values = new double[layer_2_data.numAttributes()];
-            //特征
-            for (int m = 0; m < featureLength; m++) {
-                values[m] = trainDataset.instance(i).value(featureIndices[m]);
+            for (int m = 0; m < featureIndices.length; m++) {
+                values[m] = train.getDataSet().instance(i).value(featureIndices[m]);
             }
-            //label 将原标签向后移
             for (int j = 0; j < numLabels; j++) {
-                values[labelIndices[j] + numLabels] = trainDataset.instance(i).value(labelIndices[j]);
+                values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
             }
-            //使用第一层预测结果
-            System.arraycopy(layer_1Predict[i], 0, values, featureLength, numLabels);
-
-            Instance metaInstance = DataUtils.createInstance(trainDataset.instance(i), 1, values);
+            System.arraycopy(layer_1Predict[i], 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+            //将原标签向后移
+            for (int j = 0; j < numLabels; j++) {
+                values[labelIndices[j] + numLabels] = train.getDataSet().instance(i).value(labelIndices[j]);
+            }
+            Instance metaInstance = DataUtils.createInstance(train.getDataSet().instance(i), 1, values);
             metaInstance.setDataset(layer_2_data);
 
             layer_2_data.add(metaInstance);
@@ -293,14 +318,14 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
             remove.setInvertSelection(false);
             layer_2[index].setFilter(remove);
             //设置当前分类器对应的标签列作为标签列
-            layer_2_data.setClassIndex(labelIndices[index] + numLabels);
+            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + index);
             debug("Bulding layer_2 model " + (index + 1) + "/" + numLabels);
             layer_2[index].buildClassifier(layer_2_data);
             //更新数据
             for (Instance ins : layer_2_data) {
                 double[] doubles = layer_2[index].distributionForInstance(ins);
                 int predict = (doubles[0] > doubles[1]) ? 0 : 1;
-                ins.setValue(labelIndices[index], predict);
+                ins.setValue(layer_2_data.classIndex(), predict);
             }
         }
 
@@ -419,12 +444,12 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
         }
 
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());
-        double[] values = new double[featureLength + numLabels * 2];
-        for (int m = 0; m < featureLength; m++) {
+        double[] values = new double[layer_2_data.numAttributes()];
+        for (int m = 0; m < featureIndices.length; m++) {
             values[m] = instance.value(featureIndices[m]);
         }
-        System.arraycopy(layer_1_out, 0, values, featureLength, numLabels);
-        metaInstance = DataUtils.createInstance(instance, 1, values);
+        System.arraycopy(layer_1_out, 0, values, train.getDataSet().numAttributes() - numLabels, numLabels);
+        metaInstance = DataUtils.createInstance(train.getDataSet().instance(0), 1, values);
         metaInstance.setDataset(layer_2_data);
         //将原标签向后移
         for (int j = 0; j < numLabels; j++) {
@@ -435,23 +460,32 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
             int index = chain.indexOf(i);
 
-            layer_2_data.setClassIndex(featureLength + numLabels + index);
+
+            layer_2_data.setClassIndex(layer_2_data.numAttributes() - numLabels + index);
 
             metaInstance.setClassValue(instance.value(labelIndices[index]));
+
 
 
             double[] doubles = layer_2[index].distributionForInstance(metaInstance);
 
             int maxIndex = (doubles[0] > doubles[1]) ? 0 : 1;
+//            if(i > 0){
+//                System.out.println("当前数据：" + metaInstance.classValue());
+//                System.out.println("前一个模型数据: " + metaInstance.value(labelIndices[chain.indexOf(i - 1)]));
+//            }
+            //更新数据
+            metaInstance.setValue(metaInstance.classIndex() - numLabels, maxIndex);
+
 
             // Ensure correct predictions both for class values {0,1} and {1,0}
             Attribute classAttribute = layer_2[index].getFilter().getOutputFormat().classAttribute();
-            bipartition[index] = classAttribute.value(maxIndex).equals("1");
+            bipartition[index] = (classAttribute.value(maxIndex).equals("1")) ? true : false;
 
             // The confidence of the label being equal to 1
             confidences[index] = doubles[classAttribute.indexOfValue("1")];
 
-            //更新数据, 此时labelindex实际是第一层输出的index
+//            暂时不更新
             metaInstance.setValue(labelIndices[index], maxIndex);
         }
 

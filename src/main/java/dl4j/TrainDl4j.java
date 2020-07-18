@@ -1,29 +1,13 @@
-/*
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License
- *    along with this program; if not, write to the Free Software
- *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- */
-package mulan.classifier.transformation;
+package dl4j;
 
 import dl4j.conf.CopyVertex;
 import dl4j.conf.MultiplyVertex;
 import mulan.classifier.MultiLabelOutput;
 import mulan.classifier.neural.NormalizationFilter;
+import mulan.classifier.transformation.TransformationBasedMultiLabelLearner;
 import mulan.data.DataUtils;
 import mulan.data.MultiLabelInstances;
-import mulan.rbms.M;
 import mulan.util.Attention;
-import mulan.util.ChainUtils;
 import org.deeplearning4j.datasets.iterator.impl.ListDataSetIterator;
 import org.deeplearning4j.earlystopping.EarlyStoppingConfiguration;
 import org.deeplearning4j.earlystopping.EarlyStoppingResult;
@@ -36,9 +20,9 @@ import org.deeplearning4j.earlystopping.trainer.EarlyStoppingGraphTrainer;
 import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.layers.*;
+import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
-import org.deeplearning4j.nn.weights.WeightInit;
 import org.jetbrains.annotations.NotNull;
 import org.jgrapht.alg.interfaces.VertexScoringAlgorithm;
 import org.jgrapht.graph.DefaultEdge;
@@ -47,41 +31,24 @@ import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
-import org.nd4j.linalg.learning.config.Adam;
-import org.nd4j.linalg.learning.config.IUpdater;
 import org.nd4j.linalg.lossfunctions.impl.LossNegativeLogLikelihood;
 import org.nd4j.linalg.ops.transforms.Transforms;
-import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.meta.FilteredClassifier;
 import weka.classifiers.trees.J48;
 import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
-import weka.filters.unsupervised.attribute.Remove;
+import weka.core.SparseInstance;
+import weka.filters.Filter;
+import weka.filters.unsupervised.instance.SparseToNonSparse;
 
 import java.util.*;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
+
 
 import static org.deeplearning4j.nn.conf.Updater.RMSPROP;
-import static org.deeplearning4j.nn.conf.Updater.SGD;
 
-/**
- * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
- * <p>For more information, see <em>Read, J.; Pfahringer, B.; Holmes, G., Frank,
- * E. (2011) Classifier Chains for Multi-label Classification. Machine Learning.
- * 85(3):335-359.</em></p>
- *
- * @author Eleftherios Spyromitros-Xioufis
- * @author Konstantinos Sechidis
- * @author Grigorios Tsoumakas
- * @version 2012.02.27
- */
-public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner {
+public class TrainDl4j extends TransformationBasedMultiLabelLearner {
 
     /**
      * The number of classifier chain models
@@ -91,8 +58,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
      * An array of ClassifierChain models
      */
     protected FilteredClassifier[] layer_1;
-    //第二层的链序
-    protected FilteredClassifier[] layer_2;
     protected ComputationGraph[] neuralNetList;
     protected NormalizationFilter normalizationFilter;
 
@@ -109,7 +74,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
      * Whether to use sampling with replacement to create the data of the models
      * of the ensemble
      */
-    protected boolean useSamplingWithReplacement = true;
     /**
      * The size of each bag sample, as a percentage of the training size. Used
      * when useSamplingWithReplacement is true
@@ -117,42 +81,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     protected int BagSizePercent = 100;
     private int featureLength;
 
-    /**
-     * Returns the size of each bag sample, as a percentage of the training size
-     *
-     * @return the size of each bag sample, as a percentage of the training size
-     */
-    public int getBagSizePercent() {
-        return BagSizePercent;
-    }
-
-    /**
-     * Sets the size of each bag sample, as a percentage of the training size
-     *
-     * @param bagSizePercent the size of each bag sample, as a percentage of the
-     * training size
-     */
-    public void setBagSizePercent(int bagSizePercent) {
-        BagSizePercent = bagSizePercent;
-    }
-
-    /**
-     * Returns the sampling percentage
-     *
-     * @return the sampling percentage
-     */
-    public double getSamplingPercentage() {
-        return samplingPercentage;
-    }
-
-    /**
-     * Sets the sampling percentage
-     *
-     * @param samplingPercentage the sampling percentage
-     */
-    public void setSamplingPercentage(double samplingPercentage) {
-        this.samplingPercentage = samplingPercentage;
-    }
     /**
      * The size of each sample, as a percentage of the training size Used when
      * useSamplingWithReplacement is false
@@ -162,7 +90,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     private MultiLabelInstances train;
     private ArrayList<Integer> chain = new ArrayList<>();
     private Classifier layer2Clssifier;
-    private int batchSize = 512;
 
     private ArrayList<Attribute> layer_2_Attr;
     HashMap<Integer, Attention> attentions = new HashMap<>();
@@ -171,8 +98,8 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     /**
      * Default constructor
      */
-    public AttMiPageRankNeuralNet() {
-        this(new J48(), new J48(), 512);
+    public TrainDl4j() {
+        this(new J48(), new J48());
     }
 
     /**
@@ -180,246 +107,92 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
      *
      * @param classifier the base classifier for each ClassifierChain model
      */
-    public AttMiPageRankNeuralNet(Classifier classifier, Classifier layer2, int batchSize) {
+    public TrainDl4j(Classifier classifier, Classifier layer2) {
         super(classifier);
         layer2Clssifier= layer2;
         rand = new Random(1);
-        Nd4j.ENFORCE_NUMERICAL_STABILITY = true;
-        this.batchSize = batchSize;
+//        Nd4j.ENFORCE_NUMERICAL_STABILITY = true;
 
     }
 
     @Override
     protected void buildInternal(MultiLabelInstances train) throws Exception {
-        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
-        int[] cc = ChainUtils.getMiCCChain(train);
-        System.out.println(Arrays.toString(cc));
-        for (int c: cc) {
-            chain.add(c);
-        }
-        this.train = train;
-        layer_2_Attr = layer_2_Attr();
+        // dl4j
+        Instances instances = train.getDataSet();
         numLabels = train.getNumLabels();
         numOfModels = numLabels;
-        featureIndices = train.getFeatureIndices();
-        labelIndices = train.getLabelIndices();
         featureLength = featureIndices.length;
-        layer_1 = new FilteredClassifier[numLabels];
-        layer_2 = new FilteredClassifier[numLabels];
-        neuralNetList = new ComputationGraph[numLabels];
+        int layer2FeatureLength = featureLength;
 
-        Instances trainDataset;
-        trainDataset = train.getDataSet();
-        MultiLabelInstances normalizaTrain = train.clone();
-        normalizationFilter = new NormalizationFilter(normalizaTrain, true, 0.0, 1.0);
-        ThreadLocal<Instances> localInst =  new ThreadLocal<Instances>(){
-            @Override
-            protected Instances initialValue() {
-                return train.clone().getDataSet();
-            }
-        };
 
-        //STEP1: 单独训练多个单分类器。
-        //把当前不是自分类器的标签列移除，只保留当前分类器对应的标签列
+        List<ListDataSetIterator<DataSet>> dp = new ArrayList<>();
+
+        List<List<DataSet>> list = new ArrayList<>();
+
         for (int i = 0; i < numLabels; i++) {
-
-            int finalI = i;
-            ec.submit(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        Instances copyTrainDateset = localInst.get();
-                        layer_1[finalI] = new FilteredClassifier();
-                        layer_1[finalI].setClassifier(AbstractClassifier.makeCopy(baseClassifier));
-                        //移除
-                        int[] indicesToRemove = new int[numLabels - 1];
-                        int counter2 = 0;
-                        //将不是当前分类器的标签加入数组
-                        for (int counter1 = 0; counter1 < numLabels; counter1++) {
-                            if(counter1 != finalI){
-                                indicesToRemove[counter2] = labelIndices[counter1];
-                                counter2++;
-                            }
-                        }
-
-                        Remove remove = new Remove();
-                        remove.setAttributeIndicesArray(indicesToRemove);
-                        remove.setInputFormat(copyTrainDateset);
-                        remove.setInvertSelection(false);
-                        layer_1[finalI].setFilter(remove);
-                        //设置当前分类器对应的标签列作为标签列
-                        copyTrainDateset.setClassIndex(labelIndices[finalI]);
-                        layer_1[finalI].buildClassifier(copyTrainDateset);
-                        debug("Bulding layer_1 model " + (finalI + 1) + "/" + numLabels);
-                        copyTrainDateset = null;
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-        }
-        ec.shutdown();
-        ec.awaitTermination(1, TimeUnit.DAYS);
-        ec = null;
-
-        //layer_1 done
-
-        //STEP2: 将多个单分类器分别输出对样本的预测
-        double[][] layer_1Predict = new double[trainDataset.numInstances()][numLabels];
-        for (int ii = 0; ii < trainDataset.numInstances(); ii++){
-            double[] tmpScore = new double[numLabels];
-            Instance nextElement = trainDataset.get(ii);
-            for (int i = 0; i < numLabels; i++) {
-                double[] doubles = layer_1[i].distributionForInstance(nextElement);
-                tmpScore[i] = (doubles[0] > doubles[1]) ? 0 : 1;
-            }
-            layer_1Predict[ii] = tmpScore;
+            list.add(new ArrayList<DataSet>());
         }
 
-
-        //build layer_2 data
-        // data for BPMLL, input_size = train data numAttributes + new feature(layer_1 output data) dim
-//        double[][] dataWithLayer1Output = new double[train.getNumInstances()][trainDataset.numAttributes() + numLabels];
-        double[][] dataForNeural = new double[train.getNumInstances()][featureLength + 2*numLabels];
-        double[][] class_weight = new double[numLabels][2];
-        for (int i = 0; i < train.getNumInstances(); i++) {
-//            double[] values = new double[train.getDataSet().numAttributes() + numLabels];
-            System.arraycopy(normalizaTrain.getDataSet().get(i).toDoubleArray(), 0, dataForNeural[i], 0, featureLength);
-            System.arraycopy(layer_1Predict[i], 0, dataForNeural[i], featureLength, numLabels);
-//            for (int m = 0; m < featureLength; m++) {
-////                dataWithLayer1Output[i][m] = trainDataset.instance(i).value(featureIndices[m]);
-//                dataWithLayer1Output[i][m] = normalizaTrain.getDataSet().instance(i).value(featureIndices[m]);
-//            }
-            //将原标签向后移
+        int[] labelIndices = train.getLabelIndices();
+        for (int i = 0; i < instances.numInstances(); i++) {
+            System.out.println("当前处理：" + i +"/" + instances.numInstances() + "条记录.");
+            double[] features = new double[featureLength];
+            System.arraycopy(instances.get(i).toDoubleArray(), 0, features, 0 , featureLength);        ;
             for (int j = 0; j < numLabels; j++) {
-                double labelValue = trainDataset.get(i).value(labelIndices[j]);
-//                dataWithLayer1Output[i][labelIndices[j] + numLabels] = labelValue;
-                dataForNeural[i][labelIndices[j] + numLabels] = labelValue;
-                if (labelValue > 0) {
-                    class_weight[j][1] += 1;
-                }else{
-                    class_weight[j][0] += 1;
-                }
+                double label = instances.get(i).value(labelIndices[j]);
+                double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
+//                INDArray indArray = Nd4j.createSparseCOO(values, indexes, new long[]{instances.numAttributes()});
+                INDArray indArray = Nd4j.create(features);
+                DataSet d = new DataSet(indArray, Nd4j.create(categoryLabel));
+                list.get(j).add(d.copy());
             }
-//            System.arraycopy(layer_1Predict[i], 0, dataWithLayer1Output[i], featureLength, numLabels);
-
-        }
-        for (int i = 0; i < class_weight.length; i++) {
-            double max = class_weight[i][0] > class_weight[i][1] ? class_weight[i][0] : class_weight[i][1];
-
-            class_weight[i][0] = max / (class_weight[i][0] == 0 ? max : class_weight[i][0]);
-            class_weight[i][1] = max / (class_weight[i][1] == 0 ? max : class_weight[i][1]);
         }
 
-        //class weight for dl4j
 
+        for (int i = 0; i < numLabels; i++) {
+            dp.add(new ListDataSetIterator<DataSet>(list.get(i), 1));
+        }
 
-        // dl4j
-        int layer2FeatureLength = featureLength + numLabels;
         List<ComputationGraph> netList = new ArrayList<>();
         for (int i = 0; i < numLabels; i++) {
-            //todo 暂时不使用 class weight
-            ComputationGraph net = getComputationGraph(layer2FeatureLength, Nd4j.create(class_weight[i]));
+            ComputationGraph net = getComputationGraph(layer2FeatureLength);
             net.init();
-//            net.addListeners(new ScoreIterationListener(1000));
-            //Initialize the user interface backend
-//            UIServer uiServer = UIServer.getInstance();
-            //Configure where the network information (gradients, score vs. time etc) is to be stored. Here: store in memory.
-//            StatsStorage statsStorage = new InMemoryStatsStorage();         //Alternative: new FileStatsStorage(File), for saving and loading later
-            //Then add the StatsListener to collect this information from the network, as it trains
-//            net.setListeners(new StatsListener(statsStorage));
-            //Attach the StatsStorage instance to the UI: this allows the contents of the StatsStorage to be visualized
-//            uiServer.attach(statsStorage);
             netList.add(net);
         }
 
 
 
 
-
-//        dataForNeural = null;
-
-
         // fit dl4j for each label, and get attentions
-        for (int i = 0; i < numLabels; i++) {
-            Integer idx = chain.get(i);
-            List<DataSet> list = Collections.synchronizedList(new ArrayList<DataSet>());
-            //生成DataSetIterator
-            IntStream.range(0, dataForNeural.length)
-                    .parallel()
-                    .forEach(_index -> {
-                        double[] features = Arrays.copyOfRange(dataForNeural[_index], 0 , layer2FeatureLength);
-                        double label = dataForNeural[_index][layer2FeatureLength + idx];
-                        double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
-                        DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(categoryLabel));
-                        list.add(d.copy());
-                    });
-//            Arrays.stream(dataForNeural).forEach(ins -> {
-//                double[] features = Arrays.copyOfRange(ins, 0 , layer2FeatureLength);
-//                double label = ins[layer2FeatureLength + idx];
-//                double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
-//                DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(categoryLabel));
-//                list.add(d.copy());
-//            });
-            ListDataSetIterator<DataSet> traindataSetIterator = new ListDataSetIterator<>(list, batchSize);
 
+        for (int i = 0; i < numLabels; i++) {
             List<EpochTerminationCondition> termimation = new ArrayList<>();
             termimation.add(new MaxEpochsTerminationCondition(3000));
-            termimation.add(new ScoreImprovementEpochTerminationCondition(10, 0.003));
-            termimation.add(new MaxEpochsTerminationCondition(500));
-            termimation.add(new ScoreImprovementEpochTerminationCondition(5, 0.00001));
+            termimation.add(new ScoreImprovementEpochTerminationCondition(20, 0.002));
             EarlyStoppingConfiguration<ComputationGraph> esConf = new EarlyStoppingConfiguration.Builder()
                     .epochTerminationConditions(termimation)
-                    .scoreCalculator(new DataSetLossCalculator(traindataSetIterator, true))
+                    .scoreCalculator(new DataSetLossCalculator(dp.get(i), false))
                     .evaluateEveryNEpochs(10)
                     .modelSaver(new InMemoryModelSaver())
                     .build();
-            EarlyStoppingGraphTrainer trainer = new EarlyStoppingGraphTrainer(esConf, netList.get(idx), traindataSetIterator);
-            System.out.println("init attention for lable " + (idx + 1));
+            EarlyStoppingGraphTrainer trainer = new EarlyStoppingGraphTrainer(esConf, netList.get(i), dp.get(i));
+            System.out.println("init attention for lable " + (i + 1));
 
+//            netList.get(i).fit(dp.get(i), 4000);
             EarlyStoppingResult<ComputationGraph> fit = trainer.fit();
             System.out.println("EarlyStopping at " + fit.getTotalEpochs() + " epochs");
             ComputationGraph bestModel = fit.getBestModel();
-            neuralNetList[idx] = bestModel;
-            traindataSetIterator.reset();
-            Evaluation evaluate = bestModel.evaluate(traindataSetIterator);
-            System.out.println("Evaluation " + idx + " : " + evaluate);
+            neuralNetList[i] = bestModel;
+            Evaluation evaluate = bestModel.evaluate(dp.get(i));
+            System.out.println("Evaluation " + i + " : " + evaluate);
 //            Map<String, INDArray> paramTable = netList.get(i).getLayer("dense1").paramTable();
             Map<String, INDArray> paramTable = bestModel.getLayer("dense1").paramTable();
 
+//            netList.get(i).fit(dp.get(i), 200);
+//            Map<String, INDArray> paramTable = net.getLayer("dense1").paramTable();
             INDArray w = paramTable.get("W");
             INDArray b = paramTable.get("b");
-            attentions.put(idx, new Attention(w, b));
-
-            //构建下一个批次的数据，更新对应类别预测值
-//            if(!idx.equals(chain.get(chain.size() - 1))){
-//                for (int j = 0; j < list.size(); j++) {
-//                    INDArray[] output = bestModel.output(list.get(j).getFeatures());
-////                            double predict = output[id].argMax(1).getDouble(0);
-//                    double[] doubles = output[0].toDoubleVector();
-//                    //更新对应类别预测值,使用输出的概率值
-//                    dataForNeural[j][featureLength + idx] = doubles[1];
-//
-//                }
-                int finalI = idx;
-                traindataSetIterator.reset();
-                INDArray output = bestModel.output(traindataSetIterator)[0];
-                double[][] matrix = output.toDoubleMatrix();
-//                System.out.println(output);
-//                System.out.println(Arrays.toString(output.shape()));
-                IntStream.range(0, dataForNeural.length)
-                        .parallel()
-                        .forEach(id -> {
-//                            INDArray[] output = bestModel.output(list.get(id).getFeatures());
-//                            double predict = output[id].argMax(1).getDouble(0);
-//                            double[] doubles = output.toDoubleVector();
-                            //更新对应类别预测值,使用输出的概率值
-
-//                            dataForNeural[id][featureLength + finalI] = matrix[id][1];
-                            dataForNeural[id][featureLength + finalI] = matrix[id][0] > matrix[id][1] ? 0 : 1;
-                        });
-//            }
+            attentions.put(i, new Attention(w, b));
         }
 
 
@@ -478,7 +251,7 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     }
 
     @NotNull
-    private ComputationGraph getComputationGraph(int dl4jInputLength, INDArray class_weight) {
+    private ComputationGraph getComputationGraph(int dl4jInputLength) {
         int seed = 42;
         double lr = 0.01;
         ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
@@ -492,13 +265,13 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
                 .addLayer("dense1", new DenseLayer.Builder()
                         .nIn(dl4jInputLength)
                         .nOut(dl4jInputLength)
-                        .activation(Activation.TANH)
+                        .activation(Activation.SOFTMAX)
                         .build(), "copy")
-                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
-                .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
+//                .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
+                .addVertex("multiply", new MultiplyVertex(), "input", "dense1")
 //                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
-                        .lossFunction(new LossNegativeLogLikelihood(class_weight))
+                        .lossFunction(new LossNegativeLogLikelihood())
                         .nIn(dl4jInputLength)
                         .nOut(2)
                         .activation(Activation.SOFTMAX)
@@ -625,10 +398,10 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
             layer_1_out[j] = predict;
         }
 
-//        Instance normalizaIns = DataUtils.createInstance(train.getDataSet().instance(0), 1, instance.toDoubleArray());
-        normalizationFilter.normalize(instance);
+        Instance normalizaIns = DataUtils.createInstance(train.getDataSet().instance(0), 1, instance.toDoubleArray());
+        normalizationFilter.normalize(normalizaIns);
         double[] values = new double[featureLength + 2*numLabels];
-        System.arraycopy(instance.toDoubleArray(), 0, values,0, featureLength);
+        System.arraycopy(normalizaIns.toDoubleArray(), 0, values,0, featureLength);
         System.arraycopy(layer_1_out, 0, values, featureLength, numLabels);
 
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, 1);
@@ -642,7 +415,7 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
         for (int j = 0; j < numLabels; j++) {
             values[labelIndices[j] + numLabels] = instance.value(labelIndices[j]);
         }
-        metaInstance = DataUtils.createInstance(instance, 1, values);
+        metaInstance = DataUtils.createInstance(train.getDataSet().instance(0), 1, values);
         metaInstance.setDataset(layer_2_data);
         for (int i = 0; i < numOfModels; i++) {
             int index = chain.indexOf(i);
@@ -732,6 +505,5 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
         }
         return idx;
     }
-
 
 }

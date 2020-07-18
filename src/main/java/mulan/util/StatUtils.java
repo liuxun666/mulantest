@@ -538,5 +538,48 @@ public abstract class StatUtils {
 		return X;
 	}
 
+	public static double[][] pearsonScore(double[][] L) {
+		double M[][] = new double[L[0].length][L[0].length];
+		for(int j = 0; j < L[0].length; j++) {
+			double[] x = new double[L.length];
+
+			for(int k = j + 1; k < L[0].length; k++) {
+				double[] y = new double[L.length];
+				for (int i = 0; i < L.length; i++) {
+					x[i] = L[i][j];
+					y[i] = L[i][k];
+				}
+				M[j][k] = pearsonScore(x, y);
+			}
+		}
+		return M;
+	}
+
+
+	public static double pearsonScore(double[] x, double[] y) {
+		int size = Math.min(x.length, y.length);
+		double sumX = 0;
+		double sumY = 0;
+		for (int i = 0; i < size; i++) {
+			sumX += x[i];
+			sumY += y[i];
+		}
+		double xm = sumX / size;
+		double ym = sumY / size;
+
+		double nominator = 0;
+		double d1 = 0;
+		double d2 = 0;
+
+		for (int i = 0; i < size; i++) {
+			nominator += (x[i] - xm) * (y[i] - ym);
+			d1 += Math.pow(x[i] - xm, 2);
+			d2 += Math.pow(y[i] - ym, 2);
+		}
+		return Math.abs(nominator / (Math.sqrt(d1) * Math.sqrt(d2)));
+
+	}
+
+
 
 }

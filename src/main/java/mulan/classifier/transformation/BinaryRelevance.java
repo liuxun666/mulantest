@@ -23,7 +23,9 @@ import weka.classifiers.Classifier;
 import weka.core.Instance;
 import weka.core.Instances;
 
-import java.util.Arrays;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Algorithm that builds one binary model per label.</p>
@@ -45,6 +47,7 @@ public class BinaryRelevance extends TransformationBasedMultiLabelLearner {
     protected String[] correspondence;
     protected BinaryRelevanceTransformation brt;
 
+
     /**
      * Creates a new instance
      *
@@ -56,22 +59,34 @@ public class BinaryRelevance extends TransformationBasedMultiLabelLearner {
     }
 
     protected void buildInternal(MultiLabelInstances train) throws Exception {
+        ThreadPoolExecutor ec = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         ensemble = new Classifier[numLabels];
-
         correspondence = new String[numLabels];
         for (int i = 0; i < numLabels; i++) {
             correspondence[i] = train.getDataSet().attribute(labelIndices[i]).name();
         }
-
         debug("preparing shell");
         brt = new BinaryRelevanceTransformation(train);
-
         for (int i = 0; i < numLabels; i++) {
-            ensemble[i] = AbstractClassifier.makeCopy(baseClassifier);
-            Instances shell = brt.transformInstances(i);
-            debug("Bulding model " + (i + 1) + "/" + numLabels);
-            ensemble[i].buildClassifier(shell);
+
+//            debug("Bulding model " + (i + 1) + "/" + numLabels);
+//            ensemble[i].buildClassifier(shell);
+            final int i1 = i;
+            ec.submit(() -> {
+                try {
+                    ensemble[i1] = AbstractClassifier.makeCopy(baseClassifier);
+                    Instances shell = brt.transformInstances(i1);
+                    ensemble[i1].buildClassifier(shell);
+                    debug("Bulding model " + (i1 + 1) + "/" + numLabels);
+                    shell.delete();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
         }
+        ec.shutdown();
+        ec.awaitTermination(1, TimeUnit.DAYS);
+        ec = null;
     }
 
     protected MultiLabelOutput makePredictionInternal(Instance instance) {
