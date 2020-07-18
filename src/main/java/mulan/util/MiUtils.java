@@ -18,18 +18,9 @@ public class MiUtils {
                 .map(instance -> Arrays.stream(train.getLabelIndices()).map(i -> (int)instance.value(i)).toArray());
         int[][] labels = list.toArray(int[][]::new);
 
-//        PageRank pageRank = new PageRank(labels).build();
-//        double[] pr = pageRank.getPr().getColumnPackedCopy();
         double[] pr = extPageRank(labels);
-        System.out.println("pr" + Arrays.toString(pr));
         int root = maxIndex(pr);
-//        int root = minIndex(pr);
-//        int root = 0;
         double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
-//        double[][] ud = StatUtils.mInfomation(labels, train.getNumLabels());
-        System.out.println("互信息矩阵 ：");
-        System.out.println(M.toString(ud));
-//        System.out.println(M.toString(ud1));
         EdgeWeightedGraph G = new EdgeWeightedGraph(train.getNumLabels());
 
         for(int i = 0; i < train.getNumLabels(); i++) {
@@ -46,12 +37,7 @@ public class MiUtils {
             int k = e.other(j);
             paM[j][k] = 1;
             paM[k][j] = 1;
-            //StdOut.println(e);
         }
-
-//        List<String> list = train.getLabelAttributes().stream().map(f -> f.value(0)).collect(Collectors.toList());
-//        list.stream().limit(100).forEach(System.out::println);
-//        new PageRank(trainDataset)
 
         System.out.println("Make a Tree from Root " + root);
         //这里paL[][]被初始化了，那么里面的元素就是全部0；

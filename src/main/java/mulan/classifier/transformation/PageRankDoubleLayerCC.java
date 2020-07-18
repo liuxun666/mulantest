@@ -161,10 +161,7 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
 
     @Override
     protected void buildInternal(MultiLabelInstances train) throws Exception {
-//        IntStream stream = Arrays.stream(train.getLabelIndices());
-
         int[] list = getCCChain(train);
-        System.out.println(Arrays.toString(list));
         for (int c: list) {
             chain.add(c);
         }
@@ -218,26 +215,6 @@ public class PageRankDoubleLayerCC extends TransformationBasedMultiLabelLearner 
             }
             layer_1Predict[ii] = tmpScore;
         }
-
-
-//        //STEP3: 使用第一层的输出，输进神经网络，取中间的attention权重来给单分类器的输出加权。
-//        List<DataPair> dp = new ArrayList<>();
-//        for (int i = 0; i < layer_1Predict.length; i++) {
-//            DataPair d = new DataPair(flatten(layer_1Predict[i]), getLabelValues(i));
-//            dp.add(d);
-//        }
-//
-//        bp = new BPMLL(42);
-//        bp.setDebug(true);
-//        bp.setTrainingEpochs(200);
-//        bp.setHiddenLayers(new int[]{32, 16}); //test it
-//        bp.build(dp, numLabels, train.getLabelIndices(), train.getLabelNames(), train.getFeatureIndices());
-//        //建立第二层数据
-//        double[][] layer_2_addData = new double[layer_1Predict.length][];
-//        for (int i = 0; i < layer_1Predict.length; i++) {
-//            //使用神经网络的输出并softmax  softmax(tanh(w*x +b))
-//            layer_2_addData[i] = softmax(bp.predict(dp.get(i)).getConfidences());
-//        }
 
         //layer_2 data
         Instances layer_2_data = new Instances("layer_2", layer_2_Attr, train.getNumInstances());

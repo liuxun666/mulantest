@@ -43,6 +43,7 @@ import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.conf.layers.ActivationLayer;
 import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.DropoutLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.ui.api.UIServer;
@@ -56,6 +57,7 @@ import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.learning.config.Adam;
 import org.nd4j.linalg.lossfunctions.impl.LossNegativeLogLikelihood;
 import org.nd4j.linalg.ops.transforms.Transforms;
 import weka.classifiers.AbstractClassifier;
@@ -73,15 +75,10 @@ import java.util.stream.Stream;
 import static org.deeplearning4j.nn.conf.Updater.RMSPROP;
 
 /**
- * <p>Implementation of the Ensemble of Classifier Chains(ECC) algorithm.</p>
- * <p>For more information, see <em>Read, J.; Pfahringer, B.; Holmes, G., Frank,
- * E. (2011) Classifier Chains for Multi-label Classification. Machine Learning.
- * 85(3):335-359.</em></p>
+ * ATADD-OS
  *
- * @author Eleftherios Spyromitros-Xioufis
- * @author Konstantinos Sechidis
- * @author Grigorios Tsoumakas
- * @version 2012.02.27
+ * @author liuzhao
+ * @version 2018.06.27
  */
 public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner {
 
@@ -193,7 +190,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     protected void buildInternal(MultiLabelInstances train) throws Exception {
 //        IntStream stream = Arrays.stream(train.getLabelIndices());
         int[] cc = getCCChain(train);
-        System.out.println(Arrays.toString(cc));
         for (int c: cc) {
             chain.add(c);
         }
@@ -290,7 +286,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
             class_weight[i][0] = max / (class_weight[i][0] == 0 ? max : class_weight[i][0]);
             class_weight[i][1] = max / (class_weight[i][1] == 0 ? max : class_weight[i][1]);
         }
-        System.out.println(M.toString(class_weight));
 
         //class weight for dl4j
 
@@ -299,9 +294,9 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
         int layer2FeatureLength = featureLength + numLabels;
         List<ComputationGraph> netList = new ArrayList<>();
         for (int i = 0; i < numLabels; i++) {
+            //todo 暂时不使用 class weight
             ComputationGraph net = getComputationGraph(layer2FeatureLength, Nd4j.create(class_weight[i]));
             net.init();
-//            net.addListeners(new ScoreIterationListener(1000));
             //Initialize the user interface backend
             UIServer uiServer = UIServer.getInstance();
             //Configure where the network information (gradients, score vs. time etc) is to be stored. Here: store in memory.
@@ -315,7 +310,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 
 
         List<ListDataSetIterator<DataSet>> dp = new ArrayList<>();
-        List<ListDataSetIterator<DataSet>> testDi = new ArrayList<>();
 
         List<List<DataSet>> list = new ArrayList<>();
         List<List<DataSet>> testDs = new ArrayList<>();
@@ -325,21 +319,14 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
             testDs.add(new ArrayList<DataSet>());
 
         }
-        int testIdx = (int)(dataForNeural.length * 0.9);
         for (int i = 0; i < dataForNeural.length; i++) {
             double[] features = Arrays.copyOfRange(dataForNeural[i], 0 , layer2FeatureLength);
             for (int j = 0; j < numLabels; j++) {
-//                double[] label = new double[]{dataForNeural[i][layer2FeatureLength + j]};
                 double label = dataForNeural[i][layer2FeatureLength + j];
                 double[] categoryLabel = label == 1.0 ? new double[]{0, 1} : new double[]{1, 0};
                 DataSet d = new DataSet(Nd4j.create(features), Nd4j.create(categoryLabel));
 
                 list.get(j).add(d.copy());
-//                if (i > testIdx){
-//                    testDs.get(j).add(d.copy());
-//                }else{
-//                    list.get(j).add(d.copy());
-//                }
             }
         }
 
@@ -352,12 +339,12 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 
         for (int i = 0; i < numLabels; i++) {
             List<EpochTerminationCondition> termimation = new ArrayList<>();
-            termimation.add(new MaxEpochsTerminationCondition(3000));
-            termimation.add(new ScoreImprovementEpochTerminationCondition(100, 0.01));
+            termimation.add(new MaxEpochsTerminationCondition(500));
+            termimation.add(new ScoreImprovementEpochTerminationCondition(5, 0.00001));
             EarlyStoppingConfiguration<ComputationGraph> esConf = new EarlyStoppingConfiguration.Builder()
                     .epochTerminationConditions(termimation)
                     .scoreCalculator(new DataSetLossCalculator(dp.get(i), true))
-                    .evaluateEveryNEpochs(10)
+                    .evaluateEveryNEpochs(1)
                     .modelSaver(new InMemoryModelSaver())
                     .build();
             EarlyStoppingGraphTrainer trainer = new EarlyStoppingGraphTrainer(esConf, netList.get(i), dp.get(i));
@@ -373,8 +360,6 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 //            Map<String, INDArray> paramTable = netList.get(i).getLayer("dense1").paramTable();
             Map<String, INDArray> paramTable = bestModel.getLayer("dense1").paramTable();
 
-//            netList.get(i).fit(dp.get(i), 200);
-//            Map<String, INDArray> paramTable = net.getLayer("dense1").paramTable();
             INDArray w = paramTable.get("W");
             INDArray b = paramTable.get("b");
             attentions.put(i, new Attention(w, b));
@@ -438,12 +423,11 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
     @NotNull
     private ComputationGraph getComputationGraph(int dl4jInputLength, INDArray class_weight) {
         int seed = 42;
-        double lr = 0.01;
         ComputationGraphConfiguration config = new NeuralNetConfiguration.Builder()
                 .seed(seed)
 //                .weightInit(WeightInit.RELU)
 //                .activation(Activation.LEAKYRELU)
-                .updater(RMSPROP)
+                .updater(new Adam())
                 .graphBuilder()
                 .addInputs("input")
                 .addVertex("copy", new CopyVertex(), "input")
@@ -454,13 +438,13 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
                         .build(), "copy")
                 .addLayer("softmax", new ActivationLayer(Activation.SOFTMAX), "dense1")
                 .addVertex("multiply", new MultiplyVertex(), "input", "softmax")
-//                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
+                .addLayer("drop", new DropoutLayer.Builder(0.5).build(), "multiply")
                 .addLayer("output", new OutputLayer.Builder()
-                        .lossFunction(new LossNegativeLogLikelihood(class_weight))
+                        .lossFunction(new LossNegativeLogLikelihood())
                         .nIn(dl4jInputLength)
                         .nOut(2)
                         .activation(Activation.SOFTMAX)
-                        .build(), "multiply")
+                        .build(), "drop")
                 .setOutputs("output")
                 .build();
         return new ComputationGraph(config);
@@ -516,15 +500,11 @@ public class AttMiPageRankNeuralNet extends TransformationBasedMultiLabelLearner
 //        PageRank pageRank = new PageRank(labels).build();
 //        double[] pr = pageRank.getPr().getColumnPackedCopy();
         double[] pr = pageRank(labels);
-        System.out.println("pr" + Arrays.toString(pr));
         int root = maxIndex(pr);
 //        int root = minIndex(pr);
 //        int root = 0;
         double[][] ud = StatUtils.margDepMatrix(labels, train.getNumLabels());
 //        double[][] ud = StatUtils.mInfomation(labels, train.getNumLabels());
-        System.out.println("互信息矩阵 ：");
-        System.out.println(M.toString(ud));
-//        System.out.println(M.toString(ud1));
         EdgeWeightedGraph G = new EdgeWeightedGraph(train.getNumLabels());
 
         for(int i = 0; i < train.getNumLabels(); i++) {

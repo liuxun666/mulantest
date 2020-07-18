@@ -15,10 +15,7 @@
  */
 package mulan.examples;
 
-import mulan.classifier.transformation.AttMiPageRankNeuralNet;
-import mulan.classifier.transformation.AttNeuralNet;
-import mulan.classifier.transformation.ClassifierChain;
-import mulan.classifier.transformation.PageRankDoubleLayerCC;
+import mulan.classifier.transformation.*;
 import mulan.data.MultiLabelInstances;
 import mulan.evaluation.Evaluation;
 import mulan.evaluation.Evaluator;
@@ -27,6 +24,9 @@ import weka.classifiers.functions.SMO;
 import weka.core.Instances;
 import weka.filters.Filter;
 import weka.filters.unsupervised.instance.RemovePercentage;
+
+import java.io.FileWriter;
+import java.io.PrintWriter;
 
 /**
  * Class demonstrating a simple train/test evaluation experiment
@@ -44,11 +44,9 @@ public class TrainTestExperiment {
      */
     public static void main(String[] args) {
         try {
-            String path = "F:\\code\\mulan-master\\data\\multi-label\\corel5k\\";
-//            String path = "data\\testData\\";
-            String filestem = "Corel5k";
+            String path = "F:\\code\\mulan-master\\data\\multi-label\\medical\\";
+            String filestem = "medical";
             String percentage = "80";
-//
             System.out.println("Loading the dataset");
             MultiLabelInstances mlDataSet = new MultiLabelInstances(path + filestem + ".arff", path + filestem + ".xml");
 
@@ -65,6 +63,9 @@ public class TrainTestExperiment {
             rmvp.setInputFormat(dataSet);
             Instances testDataSet = Filter.useFilter(dataSet, rmvp);
 
+            System.out.println("train date set: " + trainDataSet.numInstances());
+            System.out.println("test date set: " + testDataSet.numInstances());
+
             MultiLabelInstances train = new MultiLabelInstances(trainDataSet, path + filestem + ".xml");
             MultiLabelInstances test = new MultiLabelInstances(testDataSet, path + filestem + ".xml");
 //            MultiLabelInstances train = new MultiLabelInstances("F:\\code\\mulan-master\\data\\multi-label\\birds\\birds-train.arff", path + filestem + ".xml");
@@ -72,30 +73,44 @@ public class TrainTestExperiment {
 //                    "\\birds-test.arff", path + filestem + ".xml");
 
             Evaluator eval = new Evaluator();
-            Evaluation results;
-            Evaluation results1;
-            Evaluation results2;
-//            Evaluation results3;
+            Evaluation result_br;
+            Evaluation result_cc;
+            Evaluation result_mbr;
+            Evaluation result_dlmc;
+            Evaluation result_atdcc;
 
             Classifier brClassifier = new SMO();
-            AttMiPageRankNeuralNet cc = new AttMiPageRankNeuralNet(brClassifier, brClassifier);
-            ClassifierChain br = new ClassifierChain(brClassifier);
-            PageRankDoubleLayerCC pc = new PageRankDoubleLayerCC(brClassifier, brClassifier);
-//            AttNeuralNet an = new AttNeuralNet(brClassifier, brClassifier);
-            br.setDebug(true);
-            cc.setDebug(true);
-            cc.build(train);
+            BinaryRelevance br = new BinaryRelevance(brClassifier);
+            ClassifierChain cc = new ClassifierChain(brClassifier);
+            MultiLabelStacking mbr = new MultiLabelStacking(brClassifier, new SMO());
+            AttMiPageRankNeuralNet atdcc = new AttMiPageRankNeuralNet(brClassifier, brClassifier);
+            PageRankMiClassifierChain dlmc = new PageRankMiClassifierChain(brClassifier);
+            dlmc.setDebug(true);
+            atdcc.setDebug(true);
             br.build(train);
-            pc.build(train);
-//            an.build(train);
-//            results3 = eval.evaluate(an, test, train);
-            results2 = eval.evaluate(cc, test, train);
-            results = eval.evaluate(br, test, train);
-            results1 = eval.evaluate(pc, test, train);
-            System.out.println(results);
-            System.out.println(results1);
-            System.out.println(results2);
-//            System.out.println(results3);
+            mbr.build(train);
+            cc.build(train);
+            atdcc.build(train);
+            dlmc.build(train);
+            result_br = eval.evaluate(br, test, train);
+            result_cc = eval.evaluate(cc, test, train);
+            result_mbr = eval.evaluate(mbr, test, train);
+            result_dlmc = eval.evaluate(dlmc, test, train);
+            result_atdcc = eval.evaluate(atdcc, test, train);
+            PrintWriter writer = new PrintWriter(new FileWriter("result/" + filestem + percentage));
+            writer.println(filestem + ":");
+            writer.println("br:");
+            writer.println(result_br);
+            writer.println("mbr:");
+            writer.println(result_mbr);
+            writer.println("cc:");
+            writer.println(result_cc);
+            writer.println("dlmc:");
+            writer.println(result_dlmc);
+            writer.println("atdcc:");
+            writer.println(result_atdcc);
+            writer.flush();
+            writer.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
